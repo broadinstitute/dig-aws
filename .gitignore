@@ -1,0 +1,10 @@
+.cache-main
+.cache-tests
+.classpath
+.project
+.settings/
+target/
+project/target
+project/project/target
+/bin/
+src/it/resources/config.json
