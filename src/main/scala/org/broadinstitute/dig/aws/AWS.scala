@@ -3,14 +3,14 @@ package org.broadinstitute.dig.aggregator.core
 import cats.effect._
 import cats.implicits._
 
-import com.amazonaws.services.elasticmapreduce.model.JobFlowInstancesConfig
-import com.amazonaws.services.elasticmapreduce.model.ListStepsRequest
-import com.amazonaws.services.elasticmapreduce.model.RunJobFlowRequest
-import com.amazonaws.services.elasticmapreduce.model.RunJobFlowResult
-import com.amazonaws.services.elasticmapreduce.model.StepSummary
-import com.amazonaws.services.elasticmapreduce._
-import com.amazonaws.services.s3._
-import com.amazonaws.services.s3.model._
+import software.amazon.awssdk.services.emr.model.JobFlowInstancesConfig
+import software.amazon.awssdk.services.emr.model.ListStepsRequest
+import software.amazon.awssdk.services.emr.model.RunJobFlowRequest
+import software.amazon.awssdk.services.emr.model.RunJobFlowResponse
+import software.amazon.awssdk.services.emr.model.StepSummary
+import software.amazon.awssdk.services.emr._
+import software.amazon.awssdk.services.s3._
+import software.amazon.awssdk.services.s3.model._
 
 import com.typesafe.scalalogging.LazyLogging
 
@@ -27,6 +27,8 @@ import scala.util._
 import org.broadinstitute.dig.aws.Implicits
 import org.broadinstitute.dig.aws.JobStep
 import org.broadinstitute.dig.aws.Utils
+import software.amazon.awssdk.core.sync.RequestBody
+import software.amazon.awssdk.core.sync.ResponseTransformer
 
 /** AWS controller (S3 + EMR clients).
   */
@@ -39,11 +41,11 @@ final class AWS(config: AWSConfig) extends LazyLogging {
 
   /** S3 client for storage.
     */
-  val s3: AmazonS3 = AmazonS3ClientBuilder.standard.build
+  val s3: S3Client = S3Client.builder.build
 
   /** EMR client for running map/reduce jobs.
     */
-  val emr: AmazonElasticMapReduce = AmazonElasticMapReduceClientBuilder.standard.build
+  val emr: EmrClient = EmrClient.builder.build
 
   /** Returns the URI to a given key.
     */
@@ -61,14 +63,18 @@ final class AWS(config: AWSConfig) extends LazyLogging {
 
   /** Upload a string to S3 in a particular bucket.
     */
-  def put(key: String, text: String): IO[PutObjectResult] = IO {
-    s3.putObject(bucket, key, text)
+  def put(key: String, text: String): IO[PutObjectResponse] = IO {
+    val req = PutObjectRequest.builder.bucket(bucket).key(key).build
+    
+    s3.putObject(req, RequestBody.fromString(text))
   }
 
   /** Upload a file to S3 in a particular bucket.
     */
-  def put(key: String, stream: InputStream): IO[PutObjectResult] = IO {
-    s3.putObject(bucket, key, stream, new ObjectMetadata())
+  def put(key: String, stream: InputStream): IO[PutObjectResponse] = IO {
+    val req = PutObjectRequest.builder.bucket(bucket).key(key).build
+    
+    s3.putObject(req, RequestBody.fromInputStream(stream, ???))
   }
 
   /** Upload a resource file to S3 (using a matching key) and return a URI to it.
@@ -107,8 +113,10 @@ final class AWS(config: AWSConfig) extends LazyLogging {
 
   /** Fetch a file from an S3 bucket (does not download content).
     */
-  def get(key: String): IO[S3Object] = IO {
-    s3.getObject(bucket, key)
+  def get(key: String): IO[InputStream] = IO {
+    val req = GetObjectRequest.builder.bucket(bucket).key(key).build
+    
+    s3.getObject(req)
   }
 
   /** Returns the canonical URL for a given key.

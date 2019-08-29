@@ -2,8 +2,8 @@ package org.broadinstitute.dig.aws.emr
 
 import java.net.URI
 
-import com.amazonaws.services.elasticmapreduce.model.BootstrapActionConfig
-import com.amazonaws.services.elasticmapreduce.model.ScriptBootstrapActionConfig
+import software.amazon.awssdk.services.emr.model.BootstrapActionConfig
+import software.amazon.awssdk.services.emr.model.ScriptBootstrapActionConfig
 
 import org.broadinstitute.dig.aws.Implicits
 
@@ -17,14 +17,15 @@ class BootstrapScript(uri: URI) {
 
   /** Create a simple action configuration for this boostrap action. */
   protected def action: ScriptBootstrapActionConfig = {
-    new ScriptBootstrapActionConfig().withPath(uri.toString)
+    ScriptBootstrapActionConfig.builder.path(uri.toString).build
   }
 
   /** Create the configuration for the action to be used in cluster creation. */
   def config: BootstrapActionConfig = {
-    new BootstrapActionConfig()
-      .withScriptBootstrapAction(action)
-      .withName(uri.basename)
+    BootstrapActionConfig.builder
+      .scriptBootstrapAction(action)
+      .name(uri.basename)
+      .build
   }
 }
 
@@ -36,9 +37,10 @@ class MasterBootstrapScript(uri: URI) extends BootstrapScript(uri) {
     * See: https://docs.aws.amazon.com/emr/latest/ManagementGuide/emr-plan-bootstrap.html
     */
   override protected def action: ScriptBootstrapActionConfig = {
-    new ScriptBootstrapActionConfig()
-      .withPath("s3://elasticmapreduce/bootstrap-actions/run-if")
-      .withArgs("instance.isMaster=true", uri.toString)
+    ScriptBootstrapActionConfig.builder
+      .path("s3://elasticmapreduce/bootstrap-actions/run-if")
+      .args("instance.isMaster=true", uri.toString)
+      .build
   }
 }
 
@@ -50,8 +52,9 @@ class SlaveBootstrapScript(uri: URI) extends BootstrapScript(uri) {
     * See: https://docs.aws.amazon.com/emr/latest/ManagementGuide/emr-plan-bootstrap.html
     */
   override protected def action: ScriptBootstrapActionConfig = {
-    new ScriptBootstrapActionConfig()
-      .withPath("s3://elasticmapreduce/bootstrap-actions/run-if")
-      .withArgs("instance.isMaster=false", uri.toString)
+    ScriptBootstrapActionConfig.builder
+      .path("s3://elasticmapreduce/bootstrap-actions/run-if")
+      .args("instance.isMaster=false", uri.toString)
+      .build
   }
 }
