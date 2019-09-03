@@ -1,34 +1,39 @@
-package org.broadinstitute.dig.aggregator.core
+package org.broadinstitute.dig.aws
 
-import cats.effect._
+import java.io.InputStream
+import java.net.URI
+
+import scala.collection.JavaConverters._
+import scala.concurrent.duration._
+import scala.io.Source
+import scala.util.Random
+
+import org.broadinstitute.dig.aws.config.AWSConfig
+import org.broadinstitute.dig.aws.emr.Cluster
+
+import com.typesafe.scalalogging.LazyLogging
+
+import cats.effect.ContextShift
+import cats.effect.IO
+import cats.effect.Timer
 import cats.implicits._
-
+import software.amazon.awssdk.core.sync.RequestBody
+import software.amazon.awssdk.services.emr.EmrClient
 import software.amazon.awssdk.services.emr.model.JobFlowInstancesConfig
 import software.amazon.awssdk.services.emr.model.ListStepsRequest
 import software.amazon.awssdk.services.emr.model.RunJobFlowRequest
 import software.amazon.awssdk.services.emr.model.RunJobFlowResponse
 import software.amazon.awssdk.services.emr.model.StepSummary
-import software.amazon.awssdk.services.emr._
-import software.amazon.awssdk.services.s3._
-import software.amazon.awssdk.services.s3.model._
-
-import com.typesafe.scalalogging.LazyLogging
-
-import java.io.InputStream
-import java.net.URI
-
-import org.broadinstitute.dig.aws.config.AWSConfig
-import org.broadinstitute.dig.aws.emr.Cluster
-
-import scala.collection.JavaConverters._
-import scala.concurrent.duration._
-import scala.io.Source
-import scala.util._
-import org.broadinstitute.dig.aws.Implicits
-import org.broadinstitute.dig.aws.JobStep
-import org.broadinstitute.dig.aws.Utils
-import software.amazon.awssdk.core.sync.RequestBody
-import software.amazon.awssdk.core.sync.ResponseTransformer
+import software.amazon.awssdk.services.s3.S3Client
+import software.amazon.awssdk.services.s3.model.Delete
+import software.amazon.awssdk.services.s3.model.DeleteObjectRequest
+import software.amazon.awssdk.services.s3.model.DeleteObjectsRequest
+import software.amazon.awssdk.services.s3.model.GetObjectRequest
+import software.amazon.awssdk.services.s3.model.GetUrlRequest
+import software.amazon.awssdk.services.s3.model.ObjectIdentifier
+import software.amazon.awssdk.services.s3.model.PutObjectRequest
+import software.amazon.awssdk.services.s3.model.PutObjectResponse
+import software.amazon.awssdk.core.ResponseInputStream
 
 /** AWS controller (S3 + EMR clients).
   */
@@ -113,7 +118,7 @@ final class AWS(config: AWSConfig) extends LazyLogging {
 
   /** Fetch a file from an S3 bucket (does not download content).
     */
-  def get(key: String): IO[InputStream] = IO {
+  def get(key: String): IO[ResponseInputStream[_]] = IO {
     val req = GetObjectRequest.builder.bucket(bucket).key(key).build
     
     s3.getObject(req)

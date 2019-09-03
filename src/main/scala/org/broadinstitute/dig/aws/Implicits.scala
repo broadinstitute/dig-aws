@@ -32,22 +32,13 @@ object Implicits extends LazyLogging {
   /** Helper functions for S3 objects. */
   final implicit class RichResponseInputStream[A](val responseInputStream: ResponseInputStream[A]) extends AnyVal {
 
-    /** Stop downloading and close and S3 object to free resources. */
-    def dispose(): Unit = {
-      quietly("Aborting AWS response input stream failed:", logger.warn(_, _))(responseInputStream.abort())
-      quietly("Closing AWS response input stream failed:", logger.warn(_, _))(responseInputStream.close())
-      
-      ()
-    }
-
-    
     /** Read the entire contents of an S3 object as a string, sonsuming the ResponseInputStream 
      *  and disposing of it afterward. */ 
-    def read(): String = {
+    def readAsString(): String = {
       try {
         Source.fromInputStream(responseInputStream).mkString
       } finally {
-        dispose()
+        responseInputStream.close()
       }
     }
   }

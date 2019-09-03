@@ -7,7 +7,7 @@ import org.scalatest.FunSuite
  * @author clint
  * Sep 3, 2019
  */
-final class ThroawablesTest extends FunSuite {
+final class ThrowablesTest extends FunSuite {
   test("quietly") {
     import Throwables.quietly
     

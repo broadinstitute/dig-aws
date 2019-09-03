@@ -1,33 +1,45 @@
-package org.broadinstitute.dig.aggregator.core
+package org.broadinstitute.dig.aws
 
 import cats._
 import cats.effect._
 import cats.implicits._
-import com.amazonaws.services.s3.model.S3Object
+
 import java.nio.charset.Charset
 
-import org.broadinstitute.dig.aggregator.app.Opts
-import org.broadinstitute.dig.aggregator.core.config.Secrets
 import org.scalatest.FunSuite
 
 import scala.collection.mutable.ArrayBuffer
 import scala.collection.mutable.Buffer
+import org.json4s.Formats
+import org.json4s.DefaultFormats
+import org.json4s.jackson.Serialization.read
+import org.broadinstitute.dig.aws.config.emr.EmrConfig
+import org.broadinstitute.dig.aws.config.AWSConfig
+import scala.io.Source
+import java.io.File
+import software.amazon.awssdk.services.s3.model.S3Object
+import software.amazon.awssdk.core.ResponseInputStream
+
+
 
 /**
   * @author clint
   * Jul 27, 2018
   */
 final class AwsTest extends AwsFunSuite {
-  //Config file needs to be in place before this test will work.
-  private val opts = new Opts(Array("--config", "src/it/resources/config.json"))
+  
+  override protected val aws: AWS = {
+    //Config file needs to be in place before this test will work.
+    val configFile = new File("src/it/resources/config.json")
+    
+    val configFileContents = Source.fromFile(configFile).mkString
+    
+    implicit val formats: Formats = DefaultFormats ++ EmrConfig.customSerializers
 
-  override protected val aws = new AWS(opts.config.aws)
-
-  test("secrets") {
-    val secret = Secrets.get[SecretsTest.TestSecret]("hello")
-
-    assert(secret.isSuccess)
-    assert(secret.get.hello == "world")
+    /** Load the settings file and parse it. */
+    val awsConfig = read[AWSConfig](configFileContents)
+    
+    new AWS(awsConfig)
   }
 
   /**
@@ -214,6 +226,7 @@ final class AwsTest extends AwsFunSuite {
   //Put an object, then read it back again
   private lazy val doPutGetTest: String => IO[Unit] = { pseudoDirKey =>
     import cats.implicits._
+    import Implicits._
 
     val pseudoDirKeyWithSlash = s"$pseudoDirKey/"
 
@@ -223,7 +236,7 @@ final class AwsTest extends AwsFunSuite {
     for {
       beforePut       <- aws.ls(pseudoDirKeyWithSlash)
       _               <- aws.put(key, contents)
-      contentsFromAws <- aws.get(key).map(asString)
+      contentsFromAws <- aws.get(key).map(_.readAsString())
     } yield {
       //sanity check: the thing we're putting shouldn't have been there yet
       assert(beforePut == Nil)
@@ -236,18 +249,19 @@ final class AwsTest extends AwsFunSuite {
   //Make a pseudo-dir, then make the same one again with different metadata
   private lazy val doMkdirTest: String => IO[Unit] = { pseudoDirKey =>
     import cats.implicits._
+    import Implicits._
 
     val pseudoDirKeyWithSlash = s"$pseudoDirKey/"
 
     val metadataContents0 = "some-metadata0"
     val metadataContents1 = "some-metadata1"
-
+    
     for {
       _         <- aws.mkdir(pseudoDirKey, metadataContents0)
-      metadata0 <- aws.get(s"${pseudoDirKey}/metadata").map(asString)
+      metadata0 <- aws.get(s"${pseudoDirKey}/metadata").map(_.readAsString())
       contents0 <- aws.ls(pseudoDirKeyWithSlash)
       _         <- aws.mkdir(pseudoDirKey, metadataContents1)
-      metadata1 <- aws.get(s"${pseudoDirKey}/metadata").map(asString)
+      metadata1 <- aws.get(s"${pseudoDirKey}/metadata").map(_.readAsString())
       contents1 <- aws.ls(pseudoDirKeyWithSlash)
     } yield {
       assert(metadata0 == metadataContents0)
@@ -262,38 +276,4 @@ final class AwsTest extends AwsFunSuite {
       ()
     }
   }
-
-  private val utf8 = Charset.forName("UTF-8")
-
-  private def asString(s3Object: S3Object): String = {
-    try {
-      val ois = s3Object.getObjectContent
-
-      val chunkSize = 4096
-
-      def read(): Array[Byte] = {
-        val buffer: Array[Byte] = Array.ofDim(chunkSize)
-
-        val numRead = ois.read(buffer)
-
-        if (numRead == chunkSize) buffer else buffer.take(numRead)
-      }
-
-      def notDone(buf: Array[Byte]): Boolean = buf.length > 0
-
-      val bytesSoFar: Buffer[Byte] = new ArrayBuffer
-
-      val chunks = Iterator.continually(read()).takeWhile(notDone)
-
-      chunks.foreach(bytesSoFar ++= _)
-
-      new String(bytesSoFar.toArray, utf8)
-    } finally {
-      s3Object.close()
-    }
-  }
-}
-
-object SecretsTest {
-  case class TestSecret(hello: String)
 }
