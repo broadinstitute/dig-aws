@@ -18,6 +18,8 @@ import com.typesafe.scalalogging.LazyLogging
 import Throwables.quietly
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Request
 import software.amazon.awssdk.services.s3.paginators.ListObjectsV2Iterable
+import scala.collection.mutable.Buffer
+import scala.collection.mutable.ArrayBuffer
 
 object Implicits extends LazyLogging {
 
@@ -58,7 +60,6 @@ object Implicits extends LazyLogging {
       // an exception indicates that the object doesn't exist
       Try(s3.getObject(req))
         .map { responseStream =>
-          responseStream.abort()
           responseStream.close()
 
           true
@@ -75,7 +76,7 @@ object Implicits extends LazyLogging {
     /** Collect all the keys (recursively) into a collection. */
     def listKeys(bucket: String, key: String, recursive: Boolean = true): Seq[String] = {
       val responses = listingsIterable(bucket, key).iterator.asScala
-      var keys = Vector.empty[String]
+      val keys: Buffer[String] = new ArrayBuffer
 
       // find all the keys in each object listing
       for (response <- responses) {
@@ -88,7 +89,7 @@ object Implicits extends LazyLogging {
         }
       }
 
-      keys
+      keys.toSeq
     }
   }
 

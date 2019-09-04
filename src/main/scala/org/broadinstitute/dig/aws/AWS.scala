@@ -74,14 +74,6 @@ final class AWS(config: AWSConfig) extends LazyLogging {
     s3.putObject(req, RequestBody.fromString(text))
   }
 
-  /** Upload a file to S3 in a particular bucket.
-    */
-  def put(key: String, stream: InputStream): IO[PutObjectResponse] = IO {
-    val req = PutObjectRequest.builder.bucket(bucket).key(key).build
-    
-    s3.putObject(req, RequestBody.fromInputStream(stream, ???))
-  }
-
   /** Upload a resource file to S3 (using a matching key) and return a URI to it.
     */
   def upload(resource: String, dirKey: String = "resources"): IO[URI] = {
@@ -127,10 +119,7 @@ final class AWS(config: AWSConfig) extends LazyLogging {
   /** Returns the canonical URL for a given key.
     */
   def publicUrlOf(key: String): String = {
-    val req = GetUrlRequest.builder
-                           .bucket(bucket)
-                           .key(key)
-                           .build
+    val req = GetUrlRequest.builder.bucket(bucket).key(key).build
                            
     s3.utilities.getUrl(req).toExternalForm
   }
