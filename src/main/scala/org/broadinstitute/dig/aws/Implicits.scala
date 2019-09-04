@@ -1,27 +1,28 @@
 package org.broadinstitute.dig.aws
 
-import cats.effect._
 import java.net.URI
 import java.nio.file.Paths
+
 import scala.collection.JavaConverters._
+import scala.collection.mutable.ArrayBuffer
+import scala.collection.mutable.Buffer
 import scala.concurrent.ExecutionContext
 import scala.io.Source
 import scala.util.Try
+
+import cats.effect.ContextShift
+import cats.effect.IO
+import cats.effect.Timer
+import software.amazon.awssdk.core.ResponseInputStream
 import software.amazon.awssdk.services.emr.model.StepState
 import software.amazon.awssdk.services.emr.model.StepSummary
 import software.amazon.awssdk.services.s3.S3Client
 import software.amazon.awssdk.services.s3.model.GetObjectRequest
-import software.amazon.awssdk.services.s3.model.ListObjectsV2Response //ObjectListing
-import software.amazon.awssdk.services.s3.model.S3Object
-import software.amazon.awssdk.core.ResponseInputStream
-import com.typesafe.scalalogging.LazyLogging
-import Throwables.quietly
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Request
+import software.amazon.awssdk.services.s3.model.ListObjectsV2Response
 import software.amazon.awssdk.services.s3.paginators.ListObjectsV2Iterable
-import scala.collection.mutable.Buffer
-import scala.collection.mutable.ArrayBuffer
 
-object Implicits extends LazyLogging {
+object Implicits {
 
   object Defaults {
     /** Needed for IO.sleep. */
