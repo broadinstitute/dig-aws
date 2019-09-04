@@ -148,10 +148,10 @@ object Implicits {
 
     /** True if this step stopped for any reason. */
     def isStopped: Boolean = state match {
-      case StepState.FAILED => true
+      case StepState.FAILED =>      true
       case StepState.INTERRUPTED => true
-      case StepState.CANCELLED => true
-      case _ => false
+      case StepState.CANCELLED =>   true
+      case _ =>                     false
     }
 
     /** Return a reason for why this step was stopped. */
@@ -159,8 +159,8 @@ object Implicits {
       failureReason.getOrElse {
         state match {
           case StepState.INTERRUPTED => state.toString
-          case StepState.CANCELLED => state.toString
-          case _ => "Unknown"
+          case StepState.CANCELLED =>   state.toString
+          case _ =>                     "Unknown"
         }
       }
     }
