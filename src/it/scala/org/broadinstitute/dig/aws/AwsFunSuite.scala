@@ -1,6 +1,6 @@
-package org.broadinstitute.dig.aggregator.core
+package org.broadinstitute.dig.aws
 
-import org.broadinstitute.dig.aggregator.core.emr._
+import org.broadinstitute.dig.aws.emr._
 import org.scalatest.FunSuite
 import java.time.format.DateTimeFormatter
 import java.time.ZoneId

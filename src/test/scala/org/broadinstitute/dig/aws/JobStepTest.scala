@@ -2,11 +2,9 @@ package org.broadinstitute.dig.aws
 
 import org.scalatest.FunSuite
 import java.net.URI
-import com.amazonaws.services.elasticmapreduce.model.StepConfig
-import com.amazonaws.services.elasticmapreduce.model.ActionOnFailure
-import com.amazonaws.services.elasticmapreduce.model.HadoopJarStepConfig
-import org.scalactic.source.Position.apply
-import scala.collection.Seq
+import software.amazon.awssdk.services.emr.model.StepConfig
+import software.amazon.awssdk.services.emr.model.ActionOnFailure
+import software.amazon.awssdk.services.emr.model.HadoopJarStepConfig
 
 /**
  * @author clint
@@ -44,14 +42,15 @@ final class JobStepTest extends FunSuite {
 
     assert(config.isInstanceOf[StepConfig])
 
-    assert(config.getName == toJobName(uri))
-    assert(config.getActionOnFailure == ActionOnFailure.TERMINATE_CLUSTER.name)
+    assert(config.name == toJobName(uri))
+    assert(config.actionOnFailure == ActionOnFailure.TERMINATE_CLUSTER)
 
-    val expectedJarConfig = (new HadoopJarStepConfig)
-      .withJar("s3://us-east-1.elasticmapreduce/libs/script-runner/script-runner.jar")
-      .withArgs(Seq(uri.toString, "foo", "bar", "baz").asJava)
+    val expectedJarConfig = HadoopJarStepConfig.builder
+      .jar("s3://us-east-1.elasticmapreduce/libs/script-runner/script-runner.jar")
+      .args(Seq(uri.toString, "foo", "bar", "baz").asJava)
+      .build
 
-    assert(config.getHadoopJarStep == expectedJarConfig)
+    assert(config.hadoopJarStep == expectedJarConfig)
   }
 
   test("PySpark.config") {
@@ -63,14 +62,15 @@ final class JobStepTest extends FunSuite {
 
     assert(config.isInstanceOf[StepConfig])
 
-    assert(config.getName == toJobName(uri))
-    assert(config.getActionOnFailure == ActionOnFailure.TERMINATE_CLUSTER.name)
+    assert(config.name == toJobName(uri))
+    assert(config.actionOnFailure == ActionOnFailure.TERMINATE_CLUSTER)
 
-    val expectedJarConfig = (new HadoopJarStepConfig)
-      .withJar("command-runner.jar")
-      .withArgs(Seq("spark-submit", "--deploy-mode", "cluster", uri.toString, "foo", "bar", "baz").asJava)
+    val expectedJarConfig = HadoopJarStepConfig.builder
+      .jar("command-runner.jar")
+      .args(Seq("spark-submit", "--deploy-mode", "cluster", uri.toString, "foo", "bar", "baz").asJava)
+      .build
 
-    assert(config.getHadoopJarStep == expectedJarConfig)
+    assert(config.hadoopJarStep == expectedJarConfig)
   }
 
   test("Pig.config") {
@@ -82,13 +82,13 @@ final class JobStepTest extends FunSuite {
 
     assert(config.isInstanceOf[StepConfig])
 
-    assert(config.getName == toJobName(uri))
-    assert(config.getActionOnFailure == ActionOnFailure.TERMINATE_CLUSTER.name)
+    assert(config.name == toJobName(uri))
+    assert(config.actionOnFailure == ActionOnFailure.TERMINATE_CLUSTER)
 
-    val expectedJarConfig =
-      (new HadoopJarStepConfig)
-        .withJar("command-runner.jar")
-        .withArgs(
+    val expectedJarConfig = {
+      HadoopJarStepConfig.builder
+        .jar("command-runner.jar")
+        .args(
           Seq("pig-script",
               "--run-pig-script",
               "--args",
@@ -100,7 +100,9 @@ final class JobStepTest extends FunSuite {
               "baz=z",
               "-f",
               uri.toString).asJava)
+        .build
+    }
 
-    assert(config.getHadoopJarStep == expectedJarConfig)
+    assert(config.hadoopJarStep == expectedJarConfig)
   }
 }

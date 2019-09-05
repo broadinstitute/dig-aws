@@ -1,6 +1,6 @@
 package org.broadinstitute.dig.aws.emr
 
-import com.amazonaws.services.elasticmapreduce.model.Configuration
+import software.amazon.awssdk.services.emr.model.Configuration
 import scala.collection.JavaConverters._
 
 /** Each application can have various configuration settings assigned to it.
@@ -16,9 +16,10 @@ final case class ApplicationConfig(classification: String, configs: Classificati
 
   /** Create the EMR Configuration for this application. */
   def configuration: Configuration =
-    new Configuration()
-      .withClassification(classification)
-      .withConfigurations(configs.map(_.configuration).asJava)
+    Configuration.builder
+      .classification(classification)
+      .configurations(configs.map(_.configuration).asJava)
+      .build
 }
 
 /** Each application has multiple configurations that it can export.
@@ -32,9 +33,10 @@ final case class ClassificationProperties(classification: String, properties: (S
 
   /** Create the EMR Configuration for this application. */
   def configuration: Configuration =
-    new Configuration()
-      .withClassification(classification)
-      .withProperties(properties.toMap.asJava)
+    Configuration.builder
+      .classification(classification)
+      .properties(properties.toMap.asJava)
+      .build
 }
 
 /** Companion object containing some typical configurations.

@@ -1,8 +1,8 @@
 package org.broadinstitute.dig.aws
 
-import com.amazonaws.services.elasticmapreduce.model.ActionOnFailure
-import com.amazonaws.services.elasticmapreduce.model.HadoopJarStepConfig
-import com.amazonaws.services.elasticmapreduce.model.StepConfig
+import software.amazon.awssdk.services.emr.model.ActionOnFailure
+import software.amazon.awssdk.services.emr.model.HadoopJarStepConfig
+import software.amazon.awssdk.services.emr.model.StepConfig
 import java.net.URI
 import scala.collection.JavaConverters._
 
@@ -24,15 +24,17 @@ object JobStep {
     */
   final case class MapReduce(jar: URI, mainClass: String, args: Seq[String]) extends JobStep {
     val config: StepConfig = {
-      val jarConfig = new HadoopJarStepConfig()
-        .withJar(jar.toString)
-        .withMainClass(mainClass)
-        .withArgs(args.asJava)
+      val jarConfig = HadoopJarStepConfig.builder
+        .jar(jar.toString)
+        .mainClass(mainClass)
+        .args(args.asJava)
+        .build
 
-      new StepConfig()
-        .withName(mainClass)
-        .withActionOnFailure(ActionOnFailure.TERMINATE_CLUSTER)
-        .withHadoopJarStep(jarConfig)
+      StepConfig.builder
+        .name(mainClass)
+        .actionOnFailure(ActionOnFailure.TERMINATE_CLUSTER)
+        .hadoopJarStep(jarConfig)
+        .build
     }
   }
 
@@ -42,14 +44,16 @@ object JobStep {
     */
   final case class CommandRunner(name: String, args: Seq[String]) extends JobStep {
     val config: StepConfig = {
-      val jarConfig = new HadoopJarStepConfig()
-        .withJar("command-runner.jar")
-        .withArgs(args.asJava)
+      val jarConfig = HadoopJarStepConfig.builder
+        .jar("command-runner.jar")
+        .args(args.asJava)
+        .build
 
-      new StepConfig()
-        .withName(name)
-        .withActionOnFailure(ActionOnFailure.TERMINATE_CLUSTER)
-        .withHadoopJarStep(jarConfig)
+      StepConfig.builder
+        .name(name)
+        .actionOnFailure(ActionOnFailure.TERMINATE_CLUSTER)
+        .hadoopJarStep(jarConfig)
+        .build
     }
   }
 
@@ -58,14 +62,16 @@ object JobStep {
     */
   final case class Script(script: URI, args: String*) extends JobStep {
     val config: StepConfig = {
-      val jarConfig = new HadoopJarStepConfig()
-        .withJar("s3://us-east-1.elasticmapreduce/libs/script-runner/script-runner.jar")
-        .withArgs((script.toString :: args.toList).asJava)
+      val jarConfig = HadoopJarStepConfig.builder
+        .jar("s3://us-east-1.elasticmapreduce/libs/script-runner/script-runner.jar")
+        .args((script.toString :: args.toList).asJava)
+        .build
 
-      new StepConfig()
-        .withName(toJobName(script))
-        .withActionOnFailure(ActionOnFailure.TERMINATE_CLUSTER)
-        .withHadoopJarStep(jarConfig)
+      StepConfig.builder
+        .name(toJobName(script))
+        .actionOnFailure(ActionOnFailure.TERMINATE_CLUSTER)
+        .hadoopJarStep(jarConfig)
+        .build
     }
   }
 

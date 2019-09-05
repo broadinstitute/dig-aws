@@ -1,12 +1,12 @@
 package org.broadinstitute.dig.aws.emr
 
-import com.amazonaws.services.elasticmapreduce.model.Application
+import software.amazon.awssdk.services.emr.model.Application
 
 /** An application that can be pre-installed on the cluster. */
 final case class ApplicationName(value: String) {
 
   /** Create the EMR Application object. */
-  def application: Application = new Application().withName(value)
+  def application: Application = Application.builder.name(value).build
 }
 
 /** Companion object for cluster applications. */

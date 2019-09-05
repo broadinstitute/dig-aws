@@ -2,11 +2,11 @@ package org.broadinstitute.dig.aws.emr
 
 import org.broadinstitute.dig.aws.JobStep
 
-import com.amazonaws.services.elasticmapreduce.model.EbsBlockDeviceConfig
-import com.amazonaws.services.elasticmapreduce.model.EbsConfiguration
-import com.amazonaws.services.elasticmapreduce.model.InstanceGroupConfig
-import com.amazonaws.services.elasticmapreduce.model.InstanceRoleType
-import com.amazonaws.services.elasticmapreduce.model.VolumeSpecification
+import software.amazon.awssdk.services.emr.model.EbsBlockDeviceConfig
+import software.amazon.awssdk.services.emr.model.EbsConfiguration
+import software.amazon.awssdk.services.emr.model.InstanceGroupConfig
+import software.amazon.awssdk.services.emr.model.InstanceRoleType
+import software.amazon.awssdk.services.emr.model.VolumeSpecification
 
 /** Parameterized configuration for an EMR cluster. Constant settings are
   * located in `config.emr.EmrConfig` and are loaded in the JSON.
@@ -31,40 +31,44 @@ final case class Cluster(
 
   /** Instance configuration for the master node. */
   val masterInstanceGroupConfig: InstanceGroupConfig = {
-    val volumeSpec = new VolumeSpecification()
-      .withSizeInGB(masterVolumeSizeInGB)
-      .withVolumeType("gp2")
+    val volumeSpec = VolumeSpecification.builder
+      .sizeInGB(masterVolumeSizeInGB)
+      .volumeType("gp2")
+      .build
 
-    val deviceConfig = new EbsBlockDeviceConfig().withVolumeSpecification(volumeSpec)
-    val ebsConfig    = new EbsConfiguration().withEbsBlockDeviceConfigs(deviceConfig)
+    val deviceConfig = EbsBlockDeviceConfig.builder.volumeSpecification(volumeSpec).build
+    val ebsConfig    = EbsConfiguration.builder.ebsBlockDeviceConfigs(deviceConfig).build
 
-    new InstanceGroupConfig()
-      .withEbsConfiguration(ebsConfig)
-      .withInstanceType(masterInstanceType.value)
-      .withInstanceRole(InstanceRoleType.MASTER)
-      .withInstanceCount(1)
+    InstanceGroupConfig.builder
+      .ebsConfiguration(ebsConfig)
+      .instanceType(masterInstanceType.value)
+      .instanceRole(InstanceRoleType.MASTER)
+      .instanceCount(1)
+      .build
   }
 
   /** Instance configuration for the slave nodes. */
   val slaveInstanceGroupConfig: InstanceGroupConfig = {
-    val volumeSpec = new VolumeSpecification()
-      .withSizeInGB(slaveVolumeSizeInGB)
-      .withVolumeType("gp2")
+    val volumeSpec = VolumeSpecification.builder
+      .sizeInGB(slaveVolumeSizeInGB)
+      .volumeType("gp2")
+      .build
 
-    val deviceConfig = new EbsBlockDeviceConfig().withVolumeSpecification(volumeSpec)
-    val ebsConfig    = new EbsConfiguration().withEbsBlockDeviceConfigs(deviceConfig)
+    val deviceConfig = EbsBlockDeviceConfig.builder.volumeSpecification(volumeSpec).build
+    val ebsConfig    = EbsConfiguration.builder.ebsBlockDeviceConfigs(deviceConfig).build
 
-    new InstanceGroupConfig()
-      .withEbsConfiguration(ebsConfig)
-      .withInstanceType(slaveInstanceType.value)
-      .withInstanceRole(InstanceRoleType.CORE)
-      .withInstanceCount(instances - 1)
+    InstanceGroupConfig.builder
+      .ebsConfiguration(ebsConfig)
+      .instanceType(slaveInstanceType.value)
+      .instanceRole(InstanceRoleType.CORE)
+      .instanceCount(instances - 1)
+      .build
   }
 
   /** Sequence of all instance groups used to create this cluster. */
   val instanceGroups: Seq[InstanceGroupConfig] = {
     Seq(masterInstanceGroupConfig, slaveInstanceGroupConfig)
-      .filter(_.getInstanceCount > 0)
+      .filter(_.instanceCount > 0)
   }
 }
 

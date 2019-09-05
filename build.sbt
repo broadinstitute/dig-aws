@@ -1,11 +1,11 @@
 lazy val Versions = new {
-  val Aws              = "1.11.349"
+  val Aws              = "2.7.33"
   val Cats             = "1.5.0"
   val CatsEffect       = "1.1.0"
   val Janino           = "3.0.8"
   val LogbackClassic   = "1.2.3"
   val LogbackColorizer = "1.0.1"
-  val Scala            = "2.12.8"
+  val Scala            = "2.12.9"
   val ScalaLogging     = "3.7.2"
   val ScalaTest        = "3.0.8"
   val Slf4J            = "1.7.25"
@@ -26,7 +26,7 @@ lazy val scalacOpts = Seq(
 )
 
 lazy val mainDeps = Seq(
-  "com.amazonaws"                  % "aws-java-sdk"         % Versions.Aws,
+  "software.amazon.awssdk"         % "aws-sdk-java"         % Versions.Aws,
   "com.typesafe.scala-logging"     %% "scala-logging"       % Versions.ScalaLogging,
   "ch.qos.logback"                 % "logback-classic"      % Versions.LogbackClassic,
   "org.codehaus.janino"            % "janino"               % Versions.Janino,
