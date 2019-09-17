@@ -11,6 +11,8 @@ lazy val Versions = new {
   val Slf4J            = "1.7.25"
   val Json4s           = "3.5.3"
   val Fs2              = "1.0.1"
+  val TypesafeConfig   = "1.3.4"
+  val Ficus            = "1.4.7"
 }
 
 lazy val Orgs = new {
@@ -35,6 +37,8 @@ lazy val mainDeps = Seq(
   "org.typelevel"                  %% "cats-effect"         % Versions.CatsEffect,
   "org.json4s"                     %% "json4s-jackson"      % Versions.Json4s,
   "co.fs2"                         %% "fs2-core"            % Versions.Fs2,
+  "com.typesafe"                   % "config"               % Versions.TypesafeConfig,
+  "com.iheart"                     %% "ficus"               % Versions.Ficus,
 )
 
 lazy val testDeps = Seq(
