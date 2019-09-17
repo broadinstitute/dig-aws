@@ -1,22 +1,22 @@
 package org.broadinstitute.dig.aws
 
-import org.scalatest.FunSuite
 import org.broadinstitute.dig.aws.config.AWSConfig
-import com.typesafe.config.Config
-import com.typesafe.config.ConfigFactory
 import org.broadinstitute.dig.aws.config.S3Config
 import org.broadinstitute.dig.aws.config.emr.EmrConfig
-import org.broadinstitute.dig.aws.config.emr.SubnetId
 import org.broadinstitute.dig.aws.config.emr.ReleaseLabel
-import org.broadinstitute.dig.aws.config.emr.SecurityGroupId
 import org.broadinstitute.dig.aws.config.emr.RoleId
+import org.broadinstitute.dig.aws.config.emr.SecurityGroupId
+import org.broadinstitute.dig.aws.config.emr.SubnetId
+import org.scalatest.FunSuite
+
+import com.typesafe.config.ConfigFactory
 
 /**
  * @author clint
  * Sep 17, 2019
  */
 final class AWSConfigTest extends FunSuite {
-  import AWSConfig.fromConfig
+  import org.broadinstitute.dig.aws.config.AWSConfig.fromConfig
   
   test("fromConfig - bad input") {
     assert(fromConfig(ConfigFactory.empty(), "foo").isFailure)

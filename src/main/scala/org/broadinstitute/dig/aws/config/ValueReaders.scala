@@ -1,11 +1,13 @@
 package org.broadinstitute.dig.aws.config
 
-import net.ceedubs.ficus.readers.ValueReader
-import org.broadinstitute.dig.aws.config.emr.SubnetId
-import com.typesafe.config.Config
 import org.broadinstitute.dig.aws.config.emr.ReleaseLabel
-import org.broadinstitute.dig.aws.config.emr.SecurityGroupId
 import org.broadinstitute.dig.aws.config.emr.RoleId
+import org.broadinstitute.dig.aws.config.emr.SecurityGroupId
+import org.broadinstitute.dig.aws.config.emr.SubnetId
+
+import com.typesafe.config.Config
+
+import net.ceedubs.ficus.readers.ValueReader
 
 /**
  * @author clint
