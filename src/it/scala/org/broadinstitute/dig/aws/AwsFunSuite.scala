@@ -7,12 +7,14 @@ import java.time.ZoneId
 import java.time.Instant
 import cats.effect.IO
 
+import scala.language.higherKinds
+
 /**
  * @author clint
  * Jul 27, 2018
  */
 trait AwsFunSuite extends FunSuite {
-  protected def aws: AWS
+  protected def aws: AWS[IO]
 
   def testWithPseudoDir(name: String)(body: String => Any): Unit = {
     test(name) {

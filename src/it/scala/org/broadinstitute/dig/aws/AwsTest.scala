@@ -28,7 +28,7 @@ import software.amazon.awssdk.core.ResponseInputStream
   */
 final class AwsTest extends AwsFunSuite {
   
-  override protected val aws: AWS = {
+  override protected val aws: AWS[IO] = {
     //Config file needs to be in place before this test will work.
     val configFile = new File("src/it/resources/config.json")
     
