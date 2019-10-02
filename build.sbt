@@ -28,7 +28,10 @@ lazy val scalacOpts = Seq(
 )
 
 lazy val mainDeps = Seq(
-  "software.amazon.awssdk"         % "aws-sdk-java"         % Versions.Aws,
+  "software.amazon.awssdk"         % "emr"                  % Versions.Aws,
+  "software.amazon.awssdk"         % "s3"                   % Versions.Aws,
+  "software.amazon.awssdk"         % "ec2"                  % Versions.Aws,
+  "software.amazon.awssdk"         % "secretsmanager"       % Versions.Aws,
   "com.typesafe.scala-logging"     %% "scala-logging"       % Versions.ScalaLogging,
   "ch.qos.logback"                 % "logback-classic"      % Versions.LogbackClassic,
   "org.codehaus.janino"            % "janino"               % Versions.Janino,
