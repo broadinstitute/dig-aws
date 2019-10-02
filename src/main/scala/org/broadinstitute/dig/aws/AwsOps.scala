@@ -13,6 +13,8 @@ import cats.Parallel
 import cats.Applicative
 import cats.effect.ContextShift
 import cats.effect.Clock
+import fs2.Stream
+import cats.effect.Concurrent
 
 /**
  * @author clint
@@ -35,6 +37,17 @@ sealed trait AwsOps[F[_]] {
   
   def defaultContextShift: ContextShift[F]
   
+  /** Helper to allow performing an IO operation, but ignore the results. */
+  protected val ignoreF: F[_] => F[Unit] = fa => functorMonadOps.map(fa)(scala.Function.const(()))
+
+  /** Given a sequence of IO tasks, run them in parallel, but limit the maximum
+    * concurrency so too many clusters aren't created at once.
+    *
+    * Optionally, apply a mapping function for each.
+    */
+  def waitForTasks[A, R](tasks: Seq[F[A]], limit: Int = 5)
+                        (mapEach: F[A] => F[R] = ignoreF)(implicit contextShift: ContextShift[F] = defaultContextShift): F[Unit]
+  
   object Implicits {
     implicit final class HasFunctorMonadOps[A](fa: F[A]) {
       def map[B](f: A => B): F[B] = functorMonadOps.map(fa)(f)
@@ -45,8 +58,8 @@ sealed trait AwsOps[F[_]] {
       def bracket[B](use: A => F[B])(release: A => F[Unit]): F[B] = bracketOps.bracket(fa)(use)(release)
     }
     
-    implicit final class HasParSequence[A, T[_] : Traverse](val tfa: T[F[A]]) {
-      def parSequence(implicit contextShift: ContextShift[F] = defaultContextShift): F[T[A]] = parSequenceOps.parSequence(tfa)
+    implicit final class HasParSequence[A](val tfa: List[F[A]]) {
+      def parSequence(implicit contextShift: ContextShift[F] = defaultContextShift): F[List[A]] = parSequenceOps.parSequence(tfa)
     }
   }
 }
@@ -54,7 +67,7 @@ sealed trait AwsOps[F[_]] {
 object AwsOps {
   
   sealed trait ParSequenceOps[F[_]] {
-    def parSequence[A, T[_]: Traverse](tfa: T[F[A]]): F[T[A]]
+    def parSequence[A](tfa: List[F[A]]): F[List[A]]
   }
   
   sealed trait BracketOps[F[_]] {
@@ -95,6 +108,9 @@ object AwsOps {
         }
       }
     }
+    
+    override def waitForTasks[A, R](tasks: Seq[Id[A]], limit: Int = 5)
+                        (mapEach: Id[A] => Id[R] = ignoreF)(implicit contextShift: ContextShift[Id] = defaultContextShift): Id[Unit] = () 
   }
   
   implicit object ForIO extends AwsOps[IO] {
@@ -126,5 +142,8 @@ object AwsOps {
         fa.bracket(use)(release)
       }
     }
+    
+    override def waitForTasks[A, R](tasks: Seq[IO[A]], limit: Int = 5)
+                        (mapEach: IO[A] => IO[R] = ignoreF)(implicit contextShift: ContextShift[IO] = defaultContextShift): IO[Unit] = Utils.waitForTasks(tasks, limit)(mapEach) 
   }
 }

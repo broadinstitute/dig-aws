@@ -296,8 +296,8 @@ final class AWS[F[+_] : Monad](config: AWSConfig)(implicit awsOps: AwsOps[F]) ex
     * concurrency so too many clusters aren't created at once.
     */
   def waitForJobs(jobs: Seq[F[RunJobFlowResponse]], maxClusters: Int = 5)
-                 (implicit contextShift: ContextShift[IO] = Implicits.Defaults.contextShift): F[Unit] = {
-    Utils.waitForTasks(jobs, maxClusters) { job =>
+                 (implicit contextShift: ContextShift[F] = awsOps.defaultContextShift): F[Unit] = {
+    awsOps.waitForTasks(jobs, maxClusters) { job =>
       job.flatMap(waitForJob(_))
     }
   }
