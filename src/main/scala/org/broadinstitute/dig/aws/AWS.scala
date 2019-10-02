@@ -16,7 +16,7 @@ import com.typesafe.scalalogging.LazyLogging
 import cats.effect.ContextShift
 import cats.effect.IO
 import cats.effect.Timer
-import cats.implicits._
+//import cats.implicits._
 import software.amazon.awssdk.core.sync.RequestBody
 import software.amazon.awssdk.services.emr.EmrClient
 import software.amazon.awssdk.services.emr.model.JobFlowInstancesConfig
@@ -35,11 +35,23 @@ import software.amazon.awssdk.services.s3.model.PutObjectRequest
 import software.amazon.awssdk.services.s3.model.PutObjectResponse
 import software.amazon.awssdk.core.ResponseInputStream
 
+import scala.language.higherKinds
+import cats.Monad
+
 /** AWS controller (S3 + EMR clients).
   */
-final class AWS(config: AWSConfig) extends LazyLogging {
+final class AWS[F[+_] : Monad](config: AWSConfig)(implicit awsOps: AwsOps[F]) extends LazyLogging {
   import Implicits._
+  import awsOps.Implicits._
 
+  private object F {
+    def apply[A](body: => A): F[A] = awsOps.pure(body)
+    
+    def sleep(d: FiniteDuration)(implicit timer: Timer[F]): F[Unit] = awsOps.sleep(d)
+    
+    def raiseError(t: Throwable): F[Nothing] = awsOps.raiseError(t)
+  }
+  
   /** The same region and bucket are used for all operations.
     */
   val bucket: String = config.s3.bucket
@@ -62,13 +74,13 @@ final class AWS(config: AWSConfig) extends LazyLogging {
 
   /** Test whether or not a key exists.
     */
-  def exists(key: String): IO[Boolean] = IO {
+  def exists(key: String): F[Boolean] = F {
     s3.keyExists(bucket, key)
   }
 
   /** Upload a string to S3 in a particular bucket.
     */
-  def put(key: String, text: String): IO[PutObjectResponse] = IO {
+  def put(key: String, text: String): F[PutObjectResponse] = F {
     val req = PutObjectRequest.builder.bucket(bucket).key(key).build
     
     s3.putObject(req, RequestBody.fromString(text))
@@ -76,29 +88,29 @@ final class AWS(config: AWSConfig) extends LazyLogging {
 
   /** Upload a resource file to S3 (using a matching key) and return a URI to it.
     */
-  def upload(resource: String, dirKey: String = "resources"): IO[URI] = {
+  def upload(resource: String, dirKey: String = "resources"): F[URI] = {
     val key = s"""$dirKey/${resource.stripPrefix("/")}"""
 
     //An IO that will produce the contents of the classpath resource at `resource` as a string,
     //and will close the InputStream backed by the resource when reading the resource's data is
     //done, either successfully or due to an error.
-    val contentsIo: IO[String] = {
-      val streamIo = IO(getClass.getClassLoader.getResourceAsStream(resource))
+    val contentsIo: F[String] = {
+      val streamIo = F(getClass.getClassLoader.getResourceAsStream(resource))
 
       // load the contents of the file, treat as text, ensure unix line-endings
-      def getContents(stream: InputStream): IO[String] =
-        IO(Source.fromInputStream(stream).mkString.replace("\r\n", "\n"))
+      def getContents(stream: InputStream): F[String] =
+        F(Source.fromInputStream(stream).mkString.replace("\r\n", "\n"))
 
       // close the stream to free resources
-      def closeStream(stream: InputStream): IO[Unit] =
-        IO(stream.close())
+      def closeStream(stream: InputStream): F[Unit] =
+        F(stream.close())
 
       // open, load, and ensure closed
       streamIo.bracket(getContents)(closeStream)
     }
 
     for {
-      _ <- IO(logger.debug(s"Uploading $resource to S3..."))
+      _ <- F(logger.debug(s"Uploading $resource to S3..."))
       // load the resource in the IO context
       contents <- contentsIo
       // upload it
@@ -110,7 +122,7 @@ final class AWS(config: AWSConfig) extends LazyLogging {
 
   /** Fetch a file from an S3 bucket (does not download content).
     */
-  def get(key: String): IO[ResponseInputStream[_]] = IO {
+  def get(key: String): F[ResponseInputStream[_]] = F {
     val req = GetObjectRequest.builder.bucket(bucket).key(key).build
     
     s3.getObject(req)
@@ -126,7 +138,7 @@ final class AWS(config: AWSConfig) extends LazyLogging {
 
   /** Delete a key from S3.
     */
-  def rm(key: String): IO[Unit] = IO {
+  def rm(key: String): F[Unit] = F {
     val req = DeleteObjectRequest.builder.bucket(bucket).key(key).build
     
     s3.deleteObject(req)
@@ -136,7 +148,7 @@ final class AWS(config: AWSConfig) extends LazyLogging {
 
   /** List all the keys in a given S3 folder.
     */
-  def ls(key: String, excludeSuccess: Boolean = false): IO[Seq[String]] = IO {
+  def ls(key: String, excludeSuccess: Boolean = false): F[Seq[String]] = F {
     val keys = s3.listKeys(bucket, key)
 
     // optionally filter out _SUCCESS files
@@ -145,12 +157,11 @@ final class AWS(config: AWSConfig) extends LazyLogging {
 
   /** Delete (recursively) all the keys under a given key from S3.
     */
-  def rmdir(key: String)
-           (implicit contextShift: ContextShift[IO] = Implicits.Defaults.contextShift): IO[Seq[String]] = {
+  def rmdir(key: String)(implicit contextShift: ContextShift[F] = awsOps.defaultContextShift): F[Seq[String]] = {
     
     val ios = for (listing <- s3.listingsIterable(bucket, key).asScala) yield {
       if (listing.isEmpty) {
-        IO(Nil)
+        F(Nil)
       } else {
         val keys = listing.keys
         val objectsToDelete = keys.map(ObjectIdentifier.builder.key(_).build)
@@ -158,20 +169,23 @@ final class AWS(config: AWSConfig) extends LazyLogging {
         val request = DeleteObjectsRequest.builder.bucket(bucket).delete(delete).build
         
         for {
-          _ <- IO(logger.debug(s"Deleting ${keys.head} + ${keys.tail.size} more keys..."))
-          _ <- IO(s3.deleteObjects(request))
+          _ <- F(logger.debug(s"Deleting ${keys.head} + ${keys.tail.size} more keys..."))
+          _ <- F(s3.deleteObjects(request))
         } yield keys
       }
     }
 
-    // all the delete operations can happen in parallel
-    ios.toList.parSequence.map(_.flatten)
+    {
+      import cats.implicits._
+
+      // all the delete operations can happen in parallel
+      ios.toList.parSequence.map(_.flatten)
+    }
   }
 
   /** Create a object to be used as a folder in S3.
     */
-  def mkdir(key: String, metadata: String)
-           (implicit contextShift: ContextShift[IO] = Implicits.Defaults.contextShift): IO[PutObjectResponse] = {
+  def mkdir(key: String, metadata: String)(implicit contextShift: ContextShift[F] = awsOps.defaultContextShift): F[PutObjectResponse] = {
     
     logger.debug(s"Creating pseudo-dir '$key'")
 
@@ -184,7 +198,7 @@ final class AWS(config: AWSConfig) extends LazyLogging {
   /** Create a job request that will be used to create a new EMR cluster and
     * run a series of steps.
     */
-  def runJob(cluster: Cluster, steps: Seq[JobStep]): IO[RunJobFlowResponse] = {
+  def runJob(cluster: Cluster, steps: Seq[JobStep]): F[RunJobFlowResponse] = {
     val bootstrapConfigs = cluster.bootstrapScripts.map(_.config)
     val allSteps         = cluster.bootstrapSteps ++ steps
 
@@ -221,7 +235,7 @@ final class AWS(config: AWSConfig) extends LazyLogging {
     val request = requestBuilder.build
 
     // create the IO action to launch the instance
-    IO {
+    F {
       val job = emr.runJobFlow(request)
 
       // show the cluster, job ID and # of total steps being executed
@@ -234,17 +248,17 @@ final class AWS(config: AWSConfig) extends LazyLogging {
 
   /** Helper: create a job that's a single step.
     */
-  def runJob(cluster: Cluster, step: JobStep): IO[RunJobFlowResponse] = runJob(cluster, Seq(step))
+  def runJob(cluster: Cluster, step: JobStep): F[RunJobFlowResponse] = runJob(cluster, Seq(step))
 
   /** Periodically send a request to the cluster to determine the state of all
     * steps in the job. Log output showing the % complete the jobs is or throw
     * an exception if the job failed or was interrupt/cancelled.
     */
   def waitForJob(
-      job: RunJobFlowResponse, 
-      stepsComplete: Int = 0)(implicit timer: Timer[IO] = Implicits.Defaults.timer): IO[RunJobFlowResponse] = {
+      job: RunJobFlowResponse,
+    stepsComplete: Int = 0)(implicit timer: Timer[F] = awsOps.defaultTimer): F[RunJobFlowResponse] = {
     // wait a little bit then get the status of all steps in the job
-    val getStatus = for (_ <- IO.sleep(60.seconds)) yield {
+    val getStatus = for (_ <- F.sleep(60.seconds)) yield {
       val req = ListStepsRequest.builder.clusterId(job.jobFlowId).build
 
       // extract the steps from the request response; aws reverses them
@@ -265,7 +279,7 @@ final class AWS(config: AWSConfig) extends LazyLogging {
         logger.error(s"Job ${job.jobFlowId} failed: ${step.stopReason}.")
 
         // terminate the program
-        IO.raiseError(new Exception(step.stopReason))
+        F.raiseError(new Exception(step.stopReason))
 
       case Right((n, m)) =>
         if (n != stepsComplete) {
@@ -273,7 +287,7 @@ final class AWS(config: AWSConfig) extends LazyLogging {
         }
 
         // return the job on completion or continue waiting...
-        if (n == m) IO(job) else waitForJob(job, n)
+        if (n == m) F(job) else waitForJob(job, n)
     }
   }
 
@@ -281,8 +295,8 @@ final class AWS(config: AWSConfig) extends LazyLogging {
     * Given a sequence of jobs, run them in parallel, but limit the maximum
     * concurrency so too many clusters aren't created at once.
     */
-  def waitForJobs(jobs: Seq[IO[RunJobFlowResponse]], maxClusters: Int = 5)
-                 (implicit contextShift: ContextShift[IO] = Implicits.Defaults.contextShift): IO[Unit] = {
+  def waitForJobs(jobs: Seq[F[RunJobFlowResponse]], maxClusters: Int = 5)
+                 (implicit contextShift: ContextShift[IO] = Implicits.Defaults.contextShift): F[Unit] = {
     Utils.waitForTasks(jobs, maxClusters) { job =>
       job.flatMap(waitForJob(_))
     }
@@ -305,7 +319,7 @@ final class AWS(config: AWSConfig) extends LazyLogging {
     * NOTE: The jobs are shuffled so that jobs that may be large and clumped
     *       together won't happen every time the jobs run together.
     */
-  def clusterJobs(cluster: Cluster, jobs: Seq[Seq[JobStep]], maxClusters: Int = 5): Seq[IO[RunJobFlowResponse]] = {
+  def clusterJobs(cluster: Cluster, jobs: Seq[Seq[JobStep]], maxClusters: Int = 5): Seq[F[RunJobFlowResponse]] = {
     val indexedJobs = Random.shuffle(jobs).zipWithIndex.map {
       case (job, i) => (i % maxClusters, job)
     }
