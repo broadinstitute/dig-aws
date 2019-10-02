@@ -86,9 +86,9 @@ object AwsOps {
     
     override def raiseError(t: Throwable): Id[Nothing] = throw t
 
-    override def defaultTimer: Timer[Id] = ???
+    override def defaultTimer: Timer[Id] = null.asInstanceOf[Timer[Id]] //TODO
   
-    override def defaultContextShift: ContextShift[Id] = ???
+    override def defaultContextShift: ContextShift[Id] = null.asInstanceOf[ContextShift[Id]] //TODO
     
     override protected def parSequenceOps(implicit contextShift: ContextShift[Id] = defaultContextShift): ParSequenceOps[Id] = new ParSequenceOps[Id] {
       override def parSequence[A](tfa: List[Id[A]]): Id[List[A]] = tfa

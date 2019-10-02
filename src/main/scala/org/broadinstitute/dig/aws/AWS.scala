@@ -40,7 +40,7 @@ import cats.Monad
 
 /** AWS controller (S3 + EMR clients).
   */
-final class AWS[F[+_] : Monad](config: AWSConfig)(implicit awsOps: AwsOps[F]) extends LazyLogging {
+final class AWS[F[+_]](config: AWSConfig)(implicit awsOps: AwsOps[F]) extends LazyLogging {
   import Implicits._
   import awsOps.Implicits._
 
