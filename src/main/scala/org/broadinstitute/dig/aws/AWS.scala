@@ -16,7 +16,6 @@ import com.typesafe.scalalogging.LazyLogging
 import cats.effect.ContextShift
 import cats.effect.IO
 import cats.effect.Timer
-//import cats.implicits._
 import software.amazon.awssdk.core.sync.RequestBody
 import software.amazon.awssdk.services.emr.EmrClient
 import software.amazon.awssdk.services.emr.model.JobFlowInstancesConfig
@@ -36,7 +35,7 @@ import software.amazon.awssdk.services.s3.model.PutObjectResponse
 import software.amazon.awssdk.core.ResponseInputStream
 
 import scala.language.higherKinds
-import cats.Monad
+
 
 /** AWS controller (S3 + EMR clients).
   */
