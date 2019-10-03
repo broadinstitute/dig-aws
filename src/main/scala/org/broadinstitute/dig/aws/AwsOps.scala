@@ -2,19 +2,12 @@ package org.broadinstitute.dig.aws
 
 import scala.language.higherKinds
 
-import cats.Id
-import cats.effect.IO
-import scala.concurrent.duration.Duration
 import scala.concurrent.duration.FiniteDuration
-import cats.effect.Timer
-import cats.Monad
-import cats.Traverse
-import cats.Parallel
-import cats.Applicative
+
+import cats.Id
 import cats.effect.ContextShift
-import cats.effect.Clock
-import fs2.Stream
-import cats.effect.Concurrent
+import cats.effect.IO
+import cats.effect.Timer
 
 /**
  * @author clint
