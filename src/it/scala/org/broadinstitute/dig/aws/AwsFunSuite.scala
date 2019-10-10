@@ -5,7 +5,6 @@ import org.scalatest.FunSuite
 import java.time.format.DateTimeFormatter
 import java.time.ZoneId
 import java.time.Instant
-import cats.effect.IO
 
 import scala.language.higherKinds
 
@@ -13,16 +12,18 @@ import scala.language.higherKinds
  * @author clint
  * Jul 27, 2018
  */
-trait AwsFunSuite extends FunSuite {
-  protected def aws: AWS[IO]
+abstract class AwsFunSuite[F[_]](implicit protected val awsOps: AwsOps[F]) extends FunSuite {
+  protected def aws: AWS[F]
 
+  import awsOps.Implicits._
+  
   def testWithPseudoDir(name: String)(body: String => Any): Unit = {
     test(name) {
       val mungedName = name.filter(_ != '/')
 
       val pseudoDirKey = s"integrationTests/${mungedName}"
 
-      def nukeTestDir() = aws.rmdir(s"${pseudoDirKey}/").unsafeRunSync()
+      def nukeTestDir() = aws.rmdir(s"${pseudoDirKey}/").run()
 
       nukeTestDir()
 
@@ -34,8 +35,8 @@ trait AwsFunSuite extends FunSuite {
     }
   }
 
-  def testWithPseudoDirIO[A](name: String)(body: String => IO[A]): Unit = {
-    testWithPseudoDir(name)(body(_).unsafeRunSync())
+  def testWithPseudoDirIO[A](name: String)(body: String => F[A]): Unit = {
+    testWithPseudoDir(name)(body(_).run())
   }
 
   def testWithCluster(name: String, scriptResource: String): Unit = {
@@ -53,7 +54,7 @@ trait AwsFunSuite extends FunSuite {
       } yield ()
 
       // this will assert in waitForJob if there's an error
-      ioa.unsafeRunSync()
+      ioa.run()
     }
   }
 }

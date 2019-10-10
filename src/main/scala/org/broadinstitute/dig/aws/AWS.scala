@@ -39,7 +39,7 @@ import scala.language.higherKinds
 
 /** AWS controller (S3 + EMR clients).
   */
-final class AWS[F[+_]](config: AWSConfig)(implicit awsOps: AwsOps[F]) extends LazyLogging {
+final class AWS[F[_]](config: AWSConfig)(implicit awsOps: AwsOps[F]) extends LazyLogging {
   import Implicits._
   import awsOps.Implicits._
 
@@ -48,7 +48,7 @@ final class AWS[F[+_]](config: AWSConfig)(implicit awsOps: AwsOps[F]) extends La
     
     def sleep(d: FiniteDuration)(implicit timer: Timer[F]): F[Unit] = awsOps.sleep(d)
     
-    def raiseError(t: Throwable): F[Nothing] = awsOps.raiseError(t)
+    def raiseError[A](t: Throwable): F[A] = awsOps.raiseError(t)
   }
   
   /** The same region and bucket are used for all operations.
@@ -160,7 +160,7 @@ final class AWS[F[+_]](config: AWSConfig)(implicit awsOps: AwsOps[F]) extends La
     
     val ios = for (listing <- s3.listingsIterable(bucket, key).asScala) yield {
       if (listing.isEmpty) {
-        F(Nil)
+        F(Seq.empty[String])
       } else {
         val keys = listing.keys
         val objectsToDelete = keys.map(ObjectIdentifier.builder.key(_).build)
@@ -178,7 +178,7 @@ final class AWS[F[+_]](config: AWSConfig)(implicit awsOps: AwsOps[F]) extends La
       import cats.implicits._
 
       // all the delete operations can happen in parallel
-      ios.toList.parSequence.map(_.flatten)
+      ios.toList.parSequence.map(_.flatten.toSeq)
     }
   }
 

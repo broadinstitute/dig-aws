@@ -18,13 +18,15 @@ sealed trait AwsOps[F[_]] {
   
   def sleep(d: FiniteDuration)(implicit timer: Timer[F]): F[Unit]
   
-  def raiseError(t: Throwable): F[Nothing] 
+  def raiseError[A](t: Throwable): F[A] 
   
   protected def functorMonadOps: AwsOps.FunctorMonadOps[F]
   
   protected def bracketOps: AwsOps.BracketOps[F]
 
   protected def parSequenceOps(implicit contextShift: ContextShift[F] = defaultContextShift): AwsOps.ParSequenceOps[F]
+  
+  protected def runOps: AwsOps.RunOps[F] 
   
   def defaultTimer: Timer[F]
   
@@ -52,14 +54,26 @@ sealed trait AwsOps[F[_]] {
     }
     
     implicit final class HasParSequence[A](val tfa: List[F[A]]) {
+      def sequence: F[List[A]] = parSequenceOps.sequence(tfa)
+      
       def parSequence(implicit contextShift: ContextShift[F] = defaultContextShift): F[List[A]] = parSequenceOps.parSequence(tfa)
+    }
+    
+    implicit final class HasRun[A](fa: F[A]) {
+      def run(): A = runOps.run(fa)
     }
   }
 }
 
 object AwsOps {
   
+  sealed trait RunOps[F[_]] {
+    def run[A](fa: F[A]): A
+  }
+  
   sealed trait ParSequenceOps[F[_]] {
+    def sequence[A](tfa: List[F[A]]): F[List[A]]
+    
     def parSequence[A](tfa: List[F[A]]): F[List[A]]
   }
   
@@ -77,13 +91,15 @@ object AwsOps {
     
     override def sleep(d: FiniteDuration)(implicit timer: Timer[Id]): Id[Unit] = Thread.sleep(d.toMillis)
     
-    override def raiseError(t: Throwable): Id[Nothing] = throw t
+    override def raiseError[A](t: Throwable): Id[A] = throw t
 
     override def defaultTimer: Timer[Id] = null.asInstanceOf[Timer[Id]] //TODO
   
     override def defaultContextShift: ContextShift[Id] = null.asInstanceOf[ContextShift[Id]] //TODO
     
     override protected def parSequenceOps(implicit contextShift: ContextShift[Id] = defaultContextShift): ParSequenceOps[Id] = new ParSequenceOps[Id] {
+      override def sequence[A](tfa: List[Id[A]]): Id[List[A]] = tfa
+      
       override def parSequence[A](tfa: List[Id[A]]): Id[List[A]] = tfa
     }
     
@@ -102,6 +118,10 @@ object AwsOps {
       }
     }
     
+    override protected val runOps: AwsOps.RunOps[Id] = new AwsOps.RunOps[Id] {
+      override def run[A](fa: Id[A]): A = fa
+    }
+    
     override def waitForTasks[A, R](tasks: Seq[Id[A]], limit: Int = 5)
                         (mapEach: Id[A] => Id[R] = ignoreF)(implicit contextShift: ContextShift[Id] = defaultContextShift): Id[Unit] = () 
   }
@@ -111,13 +131,19 @@ object AwsOps {
     
     override def sleep(d: FiniteDuration)(implicit timer: Timer[IO]): IO[Unit] = IO.sleep(d)
     
-    override def raiseError(t: Throwable): IO[Nothing] = IO.raiseError(t)
+    override def raiseError[A](t: Throwable): IO[A] = IO.raiseError(t)
     
     override def defaultTimer: Timer[IO] = org.broadinstitute.dig.aws.Implicits.Defaults.timer
   
     override def defaultContextShift: ContextShift[IO] = org.broadinstitute.dig.aws.Implicits.Defaults.contextShift
     
     override protected def parSequenceOps(implicit contextShift: ContextShift[IO] = defaultContextShift): ParSequenceOps[IO] = new ParSequenceOps[IO] {
+      override def sequence[A](tfa: List[IO[A]]): IO[List[A]] = {
+        import cats.implicits._
+
+        tfa.sequence
+      }
+      
       override def parSequence[A](tfa: List[IO[A]]): IO[List[A]] = {
         import cats.implicits._
 
@@ -134,6 +160,10 @@ object AwsOps {
       override def bracket[A, B](fa: IO[A])(use: A => IO[B])(release: A => IO[Unit]): IO[B] = {
         fa.bracket(use)(release)
       }
+    }
+    
+    override protected val runOps: AwsOps.RunOps[IO] = new AwsOps.RunOps[IO] {
+      override def run[A](fa: IO[A]): A = fa.unsafeRunSync()
     }
     
     override def waitForTasks[A, R](tasks: Seq[IO[A]], limit: Int = 5)

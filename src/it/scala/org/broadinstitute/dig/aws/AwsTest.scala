@@ -1,34 +1,18 @@
 package org.broadinstitute.dig.aws
 
-import cats._
-import cats.effect._
-import cats.implicits._
-
-import java.nio.charset.Charset
-
-import org.scalatest.FunSuite
-
-import scala.collection.mutable.ArrayBuffer
-import scala.collection.mutable.Buffer
 import org.json4s.Formats
 import org.json4s.DefaultFormats
-import org.json4s.jackson.Serialization.read
-import org.broadinstitute.dig.aws.config.emr.EmrConfig
+import java.io.File
 import org.broadinstitute.dig.aws.config.AWSConfig
 import scala.io.Source
-import java.io.File
-import software.amazon.awssdk.services.s3.model.S3Object
-import software.amazon.awssdk.core.ResponseInputStream
+import org.broadinstitute.dig.aws.config.emr.EmrConfig
+import org.json4s.jackson.Serialization.read
+
+import scala.language.higherKinds
 
 
-
-/**
-  * @author clint
-  * Jul 27, 2018
-  */
-final class AwsTest extends AwsFunSuite {
-  
-  override protected val aws: AWS[IO] = {
+abstract class AwsTest[F[_] : AwsOps] extends AwsFunSuite[F] {
+  override protected val aws: AWS[F] = {
     //Config file needs to be in place before this test will work.
     val configFile = new File("src/it/resources/config.json")
     
@@ -41,6 +25,8 @@ final class AwsTest extends AwsFunSuite {
     
     new AWS(awsConfig)
   }
+  
+  import awsOps.Implicits._
 
   /**
     * Create a cluster and run a simple script job.
@@ -122,7 +108,7 @@ final class AwsTest extends AwsFunSuite {
   }
 
   // Upload a resource file
-  private def doUploadTest(resource: String): String => IO[Unit] = { pseudoDirKey =>
+  private def doUploadTest(resource: String): String => F[Unit] = { pseudoDirKey =>
     val key = s"${pseudoDirKey}/${resource.stripPrefix("/")}"
 
     for {
@@ -138,7 +124,7 @@ final class AwsTest extends AwsFunSuite {
   }
 
   //Create one object and list it
-  private def doPutLsOneObjectTest(makeKey: String => String): String => IO[Unit] = { pseudoDirKey =>
+  private def doPutLsOneObjectTest(makeKey: String => String): String => F[Unit] = { pseudoDirKey =>
     val key = makeKey(pseudoDirKey)
 
     for {
@@ -153,7 +139,7 @@ final class AwsTest extends AwsFunSuite {
   }
 
   //Create n objects, then list them
-  private def doPutLsTest(n: Int): String => IO[Unit] = { pseudoDirKey =>
+  private def doPutLsTest(n: Int): String => F[Unit] = { pseudoDirKey =>
     import cats.implicits._
 
     def toKey(i: Int) = s"${pseudoDirKey}/${i}"
@@ -176,7 +162,7 @@ final class AwsTest extends AwsFunSuite {
   }
 
   //Create n objects in a pseudoDir, then delete them
-  private lazy val doRmTest: String => IO[Unit] = { pseudoDirKey =>
+  private lazy val doRmTest: String => F[Unit] = { pseudoDirKey =>
     import cats.implicits._
 
     val key0 = s"$pseudoDirKey/foo"
@@ -197,7 +183,7 @@ final class AwsTest extends AwsFunSuite {
   }
 
   //Create n objects in a pseudoDir, then delete them
-  private def doRmDirTest(n: Int): String => IO[Unit] = { pseudoDirKey =>
+  private def doRmDirTest(n: Int): String => F[Unit] = { pseudoDirKey =>
     import cats.implicits._
 
     def toKey(i: Int) = s"${pseudoDirKey}/${i}"
@@ -224,7 +210,7 @@ final class AwsTest extends AwsFunSuite {
   }
 
   //Put an object, then read it back again
-  private lazy val doPutGetTest: String => IO[Unit] = { pseudoDirKey =>
+  private lazy val doPutGetTest: String => F[Unit] = { pseudoDirKey =>
     import cats.implicits._
     import Implicits._
 
@@ -247,7 +233,7 @@ final class AwsTest extends AwsFunSuite {
   }
 
   //Make a pseudo-dir, then make the same one again with different metadata
-  private lazy val doMkdirTest: String => IO[Unit] = { pseudoDirKey =>
+  private lazy val doMkdirTest: String => F[Unit] = { pseudoDirKey =>
     import cats.implicits._
     import Implicits._
 
