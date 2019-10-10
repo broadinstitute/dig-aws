@@ -1,11 +1,13 @@
 package org.broadinstitute.dig.aws
 
-import org.json4s.Formats
-import org.json4s.DefaultFormats
 import java.io.File
-import org.broadinstitute.dig.aws.config.AWSConfig
+
 import scala.io.Source
+
+import org.broadinstitute.dig.aws.config.AWSConfig
 import org.broadinstitute.dig.aws.config.emr.EmrConfig
+import org.json4s.DefaultFormats
+import org.json4s.Formats
 import org.json4s.jackson.Serialization.read
 
 import scala.language.higherKinds
@@ -36,74 +38,74 @@ abstract class AwsTest[F[_] : AwsOps] extends AwsFunSuite[F] {
   /**
     * Put() an object, then get() it
     */
-  testWithPseudoDirIO("PutGet") {
+  testWithPseudoDirF("PutGet") {
     doPutGetTest
   }
 
   /**
     * Make a pseudo-dir, then make the same one again with different metadata
     */
-  testWithPseudoDirIO("Mkdir") {
+  testWithPseudoDirF("Mkdir") {
     doMkdirTest
   }
 
   /**
     * Create 1 non-pseudo-dir object and list it
     */
-  testWithPseudoDirIO("PutLsNonDir") {
+  testWithPseudoDirF("PutLsNonDir") {
     doPutLsOneObjectTest(_ + "/foo")
   }
 
   /**
     * Create 1 pseudo-dir object and list it
     */
-  testWithPseudoDirIO("PutLsDir") {
+  testWithPseudoDirF("PutLsDir") {
     doPutLsOneObjectTest(_ + "/foo/")
   }
 
   /**
     * Create 1 object inside a pseudo-dir and list it
     */
-  testWithPseudoDirIO("PutLs1") {
+  testWithPseudoDirF("PutLs1") {
     doPutLsTest(1)
   }
 
   /**
     * Create 10 objects and list them
     */
-  testWithPseudoDirIO("PutLs10") {
+  testWithPseudoDirF("PutLs10") {
     doPutLsTest(10)
   }
 
   /**
     * Create 2500 objects and list them
     */
-  testWithPseudoDirIO("PutLs2500") {
+  testWithPseudoDirF("PutLs2500") {
     doPutLsTest(2500)
   }
 
   /**
     * Create an object and delete it
     */
-  testWithPseudoDirIO("RmExists") {
+  testWithPseudoDirF("RmExists") {
     doRmTest
   }
 
   /**
     * Create 10 objects in a pseudo-dir and delete them
     */
-  testWithPseudoDirIO("RmDir10") {
+  testWithPseudoDirF("RmDir10") {
     doRmDirTest(10)
   }
 
   /**
     * Create 2500 objects in a pseudo-dir and delete them
     */
-  testWithPseudoDirIO("RmDir2500") {
+  testWithPseudoDirF("RmDir2500") {
     doRmDirTest(2500)
   }
 
-  testWithPseudoDirIO("Upload") {
+  testWithPseudoDirF("Upload") {
     doUploadTest("test_upload.txt")
   }
 

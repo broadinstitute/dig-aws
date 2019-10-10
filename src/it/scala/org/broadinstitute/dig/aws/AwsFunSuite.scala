@@ -35,7 +35,7 @@ abstract class AwsFunSuite[F[_]](implicit protected val awsOps: AwsOps[F]) exten
     }
   }
 
-  def testWithPseudoDirIO[A](name: String)(body: String => F[A]): Unit = {
+  def testWithPseudoDirF[A](name: String)(body: String => F[A]): Unit = {
     testWithPseudoDir(name)(body(_).run())
   }
 
@@ -47,14 +47,14 @@ abstract class AwsFunSuite[F[_]](implicit protected val awsOps: AwsOps[F]) exten
         masterInstanceType = InstanceType.m5_2xlarge,
       )
 
-      val ioa = for {
+      val fa = for {
         uri <- aws.upload(scriptResource)
         job <- aws.runJob(cluster, JobStep.Script(uri))
         res <- aws.waitForJob(job)
       } yield ()
 
       // this will assert in waitForJob if there's an error
-      ioa.run()
+      fa.run()
     }
   }
 }
