@@ -16,15 +16,15 @@ import com.typesafe.config.ConfigFactory
  * Sep 17, 2019
  */
 final class AWSConfigTest extends FunSuite {
-  import org.broadinstitute.dig.aws.config.AWSConfig.fromConfig
+  import org.broadinstitute.dig.aws.config.AWSConfig.fromTypesafeConfig
   
-  test("fromConfig - bad input") {
-    assert(fromConfig(ConfigFactory.empty(), "foo").isFailure)
-    assert(fromConfig(ConfigFactory.parseString("{ }"), "foo").isFailure)
-    assert(fromConfig(ConfigFactory.parseString("{ foo = { bar = { } } }"), "foo.bar").isFailure)
+  test("fromTypesafeConfig - bad input") {
+    assert(fromTypesafeConfig(ConfigFactory.empty(), "foo").isFailure)
+    assert(fromTypesafeConfig(ConfigFactory.parseString("{ }"), "foo").isFailure)
+    assert(fromTypesafeConfig(ConfigFactory.parseString("{ foo = { bar = { } } }"), "foo.bar").isFailure)
   }
   
-  test("fromConfig - good input, no defaults") {
+  test("fromTypesafeConfig - good input, no defaults") {
     val bucket = "some-bucket"
     val sshKeyName = "some-ssh-key-name"
     val subnetId = "subnet-some-subnet-id"
@@ -54,7 +54,7 @@ final class AWSConfigTest extends FunSuite {
       }
     }"""
               
-    val parsed = fromConfig(ConfigFactory.parseString(confString), "foo.bar.aws").get
+    val parsed = fromTypesafeConfig(ConfigFactory.parseString(confString), "foo.bar.aws").get
     
     val expected = AWSConfig(
         s3 = S3Config(bucket),
@@ -70,7 +70,7 @@ final class AWSConfigTest extends FunSuite {
     assert(parsed === expected)
   }
   
-  test("fromConfig - good input, with defaults") {
+  test("fromTypesafeConfig - good input, with defaults") {
     val bucket = "some-bucket"
     val sshKeyName = "some-ssh-key-name"
     val subnetId = "subnet-some-subnet-id"
@@ -95,7 +95,7 @@ final class AWSConfigTest extends FunSuite {
       }
     }"""
               
-    val parsed = fromConfig(ConfigFactory.parseString(confString), "foo.bar.aws").get
+    val parsed = fromTypesafeConfig(ConfigFactory.parseString(confString), "foo.bar.aws").get
     
     val expected = AWSConfig(
         s3 = S3Config(bucket),

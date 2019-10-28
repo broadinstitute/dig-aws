@@ -13,13 +13,13 @@ final case class AWSConfig(
 )
 
 object AWSConfig {
-  def fromConfig(config: Config, configPath: String): Try[AWSConfig] = {
+  def fromTypesafeConfig(config: Config, configPath: String): Try[AWSConfig] = {
     import net.ceedubs.ficus.Ficus._
     import net.ceedubs.ficus.readers.ArbitraryTypeReader._
     import ValueReaders._
 
-    //NB: Ficus marshals the contents of loamstream.aws into a GoogleCloudConfig instance.
-    //Names of fields in GoogleCloudConfig and keys under loamstream.googlecloud must match.
+    //NB: Ficus unmarshals the contents of the Config object at the key given by `configPath` into an AWSConfig 
+    //instance.  Names of fields in AWSConfig and keys under the key given by `configPath` must match.
     Try(config.as[AWSConfig](configPath))
   }
 }
