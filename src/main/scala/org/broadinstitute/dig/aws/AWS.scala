@@ -35,10 +35,20 @@ import software.amazon.awssdk.services.s3.model.PutObjectResponse
 import software.amazon.awssdk.core.ResponseInputStream
 
 import scala.language.higherKinds
+import java.nio.file.Path
+import java.nio.file.Files
+import scala.util.Try
 
 
-/** AWS controller (S3 + EMR clients).
-  */
+/** 
+ *  AWS controller (S3 + EMR clients).
+ */
+object AWS {
+  def strict(config: AWSConfig): AWS[cats.Id] = new AWS(config)
+  
+  def nonStrict(config: AWSConfig): AWS[IO] = new AWS(config)
+}
+
 final class AWS[F[_]](config: AWSConfig)(implicit awsOps: AwsOps[F]) extends LazyLogging {
   import Implicits._
   import awsOps.Implicits._
@@ -67,6 +77,10 @@ final class AWS[F[_]](config: AWSConfig)(implicit awsOps: AwsOps[F]) extends Laz
     */
   def uriOf(key: String): URI = new URI(s"s3://$bucket/$key")
 
+  def bucketOf(uri: URI): String = uri.getHost
+  
+  def keyOf(uri: URI): String = uri.getPath
+  
   /** Create a URI for a cluster log.
     */
   def logUri(cluster: Cluster): URI = uriOf(s"logs/${cluster.name}")
@@ -79,12 +93,18 @@ final class AWS[F[_]](config: AWSConfig)(implicit awsOps: AwsOps[F]) extends Laz
 
   /** Upload a string to S3 in a particular bucket.
     */
-  def put(key: String, text: String): F[PutObjectResponse] = F {
+  def put(key: String, text: String): F[PutObjectResponse] = doPut(key, RequestBody.fromString(text))
+  
+  /** Upload a string to S3 in a particular bucket.
+    */
+  def put(key: String, file: Path): F[PutObjectResponse] = doPut(key, RequestBody.fromFile(file))
+
+  private def doPut(key: String, requestBody: RequestBody): F[PutObjectResponse] = F {
     val req = PutObjectRequest.builder.bucket(bucket).key(key).build
     
-    s3.putObject(req, RequestBody.fromString(text))
+    s3.putObject(req, requestBody)
   }
-
+  
   /** Upload a resource file to S3 (using a matching key) and return a URI to it.
     */
   def upload(resource: String, dirKey: String = "resources"): F[URI] = {
@@ -119,6 +139,20 @@ final class AWS[F[_]](config: AWSConfig)(implicit awsOps: AwsOps[F]) extends Laz
     }
   }
 
+  def download(key: String, dest: Path, overwrite: Boolean = false): F[Unit] = F {
+    val req = GetObjectRequest.builder.bucket(bucket).key(key).build
+    
+    if(overwrite) {
+      Try {
+        Files.delete(dest)
+      }
+    }
+    
+    s3.getObject(req, dest)
+    
+    ()
+  }
+  
   /** Fetch a file from an S3 bucket (does not download content).
     */
   def get(key: String): F[ResponseInputStream[_]] = F {
@@ -318,19 +352,21 @@ final class AWS[F[_]](config: AWSConfig)(implicit awsOps: AwsOps[F]) extends Laz
     * NOTE: The jobs are shuffled so that jobs that may be large and clumped
     *       together won't happen every time the jobs run together.
     */
-  def clusterJobs(cluster: Cluster, jobs: Seq[Seq[JobStep]], maxClusters: Int = 5): Seq[F[RunJobFlowResponse]] = {
-    val indexedJobs = Random.shuffle(jobs).zipWithIndex.map {
+  type Job = Seq[JobStep]
+  
+  def clusterJobs(cluster: Cluster, jobs: Seq[Job], maxClusters: Int = 5): Seq[F[RunJobFlowResponse]] = {
+    val indexedJobs: Seq[(Int, Job)] = Random.shuffle(jobs).zipWithIndex.map {
       case (job, i) => (i % maxClusters, job)
     }
 
     // bootstrap steps + job steps
-    val totalSteps = cluster.bootstrapSteps.size * maxClusters + jobs.flatten.size
+    val totalSteps: Int = cluster.bootstrapSteps.size * maxClusters + jobs.flatten.size
 
     // AWS limit of 256 steps per job cluster
     require(totalSteps <= maxClusters * 256)
 
     // round-robin each job into a cluster
-    val clusteredJobs = indexedJobs.groupBy(_._1).mapValues(_.map(_._2))
+    val clusteredJobs: Map[Int, Seq[Job]] = indexedJobs.groupBy { case (index, _) => index } .mapValues(_.map { case (_, job) => job })
 
     // for each cluster, create a "job" that's all the steps appended
     clusteredJobs.values

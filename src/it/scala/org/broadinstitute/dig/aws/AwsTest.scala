@@ -11,6 +11,9 @@ import org.json4s.Formats
 import org.json4s.jackson.Serialization.read
 
 import scala.language.higherKinds
+import java.nio.file.Paths
+import java.nio.file.Files
+import java.nio.charset.StandardCharsets
 
 
 abstract class AwsTest[F[_] : AwsOps] extends AwsFunSuite[F] {
@@ -42,6 +45,13 @@ abstract class AwsTest[F[_] : AwsOps] extends AwsFunSuite[F] {
     doPutGetTest
   }
 
+  /**
+    * Put() a file, then get() it
+    */
+  testWithPseudoDirF("PutGetFile") {
+    doPutGetFileTest
+  }
+  
   /**
     * Make a pseudo-dir, then make the same one again with different metadata
     */
@@ -230,6 +240,32 @@ abstract class AwsTest[F[_] : AwsOps] extends AwsFunSuite[F] {
       assert(beforePut == Nil)
 
       assert(contentsFromAws == contents)
+      ()
+    }
+  }
+  
+  //Put an object, then read it back again
+  private lazy val doPutGetFileTest: String => F[Unit] = { pseudoDirKey =>
+    import cats.implicits._
+    import Implicits._
+
+    val pseudoDirKeyWithSlash = s"$pseudoDirKey/"
+
+    val file     = Paths.get("src/it/resources/test_upload.txt")
+    val key      = s"${pseudoDirKey}/some-key"
+
+    for {
+      beforePut       <- aws.ls(pseudoDirKeyWithSlash)
+      _               <- aws.put(key, file)
+      contentsFromAws <- aws.get(key).map(_.readAsString())
+    } yield {
+      //sanity check: the thing we're putting shouldn't have been there yet
+      assert(beforePut == Nil)
+
+      val fileContents = new String(Files.readAllBytes(file), StandardCharsets.UTF_8)
+      
+      assert(contentsFromAws == fileContents)
+      
       ()
     }
   }
