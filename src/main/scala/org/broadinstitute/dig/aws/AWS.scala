@@ -34,6 +34,9 @@ import software.amazon.awssdk.services.s3.model.ObjectIdentifier
 import software.amazon.awssdk.services.s3.model.PutObjectRequest
 import software.amazon.awssdk.services.s3.model.PutObjectResponse
 import software.amazon.awssdk.core.ResponseInputStream
+import java.nio.file.Path
+import java.nio.file.Files
+import scala.util.Try
 
 /** AWS controller (S3 + EMR clients).
   */
@@ -68,11 +71,17 @@ final class AWS(config: AWSConfig) extends LazyLogging {
 
   /** Upload a string to S3 in a particular bucket.
     */
-  def put(key: String, text: String): IO[PutObjectResponse] = IO {
+  def put(key: String, text: String): IO[PutObjectResponse] = doPut(key, RequestBody.fromString(text))
+
+  /** Upload the contents of a file to S3 in a particular bucket.
+   */
+  def put(key: String, file: Path): IO[PutObjectResponse] = doPut(key, RequestBody.fromFile(file))
+
+  private def doPut(key: String, requestBody: RequestBody): IO[PutObjectResponse] = IO {
     val req = PutObjectRequest.builder.bucket(bucket).key(key).build
-    
-    s3.putObject(req, RequestBody.fromString(text))
-  }
+     
+    s3.putObject(req, requestBody)
+   }
 
   /** Upload a resource file to S3 (using a matching key) and return a URI to it.
     */
@@ -106,6 +115,23 @@ final class AWS(config: AWSConfig) extends LazyLogging {
     } yield {
       uriOf(key)
     }
+  }
+  
+  /** Download the data at an s3 key to a path, optionally overwriting any file that already exists
+   *  at that path.  
+   */
+  def download(key: String, dest: Path, overwrite: Boolean = false): IO[Unit] = IO {
+    if(overwrite) {
+      Try {
+        Files.delete(dest)
+      }
+    }
+
+    val req = GetObjectRequest.builder.bucket(bucket).key(key).build
+    
+    s3.getObject(req, dest)
+    
+    ()
   }
 
   /** Fetch a file from an S3 bucket (does not download content).
@@ -324,4 +350,10 @@ final class AWS(config: AWSConfig) extends LazyLogging {
       .map(jobs => runJob(cluster, jobs.flatten))
       .toSeq
   }
+}
+
+object AWS {
+  def bucketOf(uri: URI): String = uri.getHost
+
+  def keyOf(uri: URI): String = uri.getPath
 }

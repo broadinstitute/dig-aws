@@ -19,6 +19,9 @@ import scala.io.Source
 import java.io.File
 import software.amazon.awssdk.services.s3.model.S3Object
 import software.amazon.awssdk.core.ResponseInputStream
+import java.nio.file.Paths
+import java.nio.file.Files
+import java.nio.charset.StandardCharsets
 
 
 
@@ -53,6 +56,14 @@ final class AwsTest extends AwsFunSuite {
   testWithPseudoDirIO("PutGet") {
     doPutGetTest
   }
+  
+  /**
+		* Put() a file, then get() it
+		*/
+  testWithPseudoDirIO("PutGetFile") {
+    doPutGetFileTest
+  }
+
 
   /**
     * Make a pseudo-dir, then make the same one again with different metadata
@@ -136,7 +147,7 @@ final class AwsTest extends AwsFunSuite {
       ()
     }
   }
-
+  
   //Create one object and list it
   private def doPutLsOneObjectTest(makeKey: String => String): String => IO[Unit] = { pseudoDirKey =>
     val key = makeKey(pseudoDirKey)
@@ -245,6 +256,33 @@ final class AwsTest extends AwsFunSuite {
       ()
     }
   }
+  
+  //Put an object, then read it back again
+  private lazy val doPutGetFileTest: String => IO[Unit] = { pseudoDirKey =>
+    import cats.implicits._
+    import Implicits._
+
+    val pseudoDirKeyWithSlash = s"$pseudoDirKey/"
+
+    val file     = Paths.get("src/it/resources/test_upload.txt")
+    val key      = s"${pseudoDirKey}/some-key"
+
+    for {
+      beforePut       <- aws.ls(pseudoDirKeyWithSlash)
+      _               <- aws.put(key, file)
+      contentsFromAws <- aws.get(key).map(_.readAsString())
+    } yield {
+      //sanity check: the thing we're putting shouldn't have been there yet
+      assert(beforePut == Nil)
+
+      val fileContents = new String(Files.readAllBytes(file), StandardCharsets.UTF_8)
+      
+      assert(contentsFromAws == fileContents)
+      
+      ()
+    }
+  }
+
 
   //Make a pseudo-dir, then make the same one again with different metadata
   private lazy val doMkdirTest: String => IO[Unit] = { pseudoDirKey =>
