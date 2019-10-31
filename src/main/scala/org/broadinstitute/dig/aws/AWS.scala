@@ -2,11 +2,17 @@ package org.broadinstitute.dig.aws
 
 import java.io.InputStream
 import java.net.URI
+import java.nio.file.Files
+import java.nio.file.Path
+import java.time.Instant
 
 import scala.collection.JavaConverters._
 import scala.concurrent.duration._
 import scala.io.Source
+import scala.util.Failure
 import scala.util.Random
+import scala.util.Success
+import scala.util.Try
 
 import org.broadinstitute.dig.aws.config.AWSConfig
 import org.broadinstitute.dig.aws.emr.Cluster
@@ -17,6 +23,7 @@ import cats.effect.ContextShift
 import cats.effect.IO
 import cats.effect.Timer
 import cats.implicits._
+import software.amazon.awssdk.core.ResponseInputStream
 import software.amazon.awssdk.core.sync.RequestBody
 import software.amazon.awssdk.services.emr.EmrClient
 import software.amazon.awssdk.services.emr.model.JobFlowInstancesConfig
@@ -29,14 +36,12 @@ import software.amazon.awssdk.services.s3.model.Delete
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest
 import software.amazon.awssdk.services.s3.model.DeleteObjectsRequest
 import software.amazon.awssdk.services.s3.model.GetObjectRequest
+import software.amazon.awssdk.services.s3.model.GetObjectResponse
 import software.amazon.awssdk.services.s3.model.GetUrlRequest
+import software.amazon.awssdk.services.s3.model.NoSuchKeyException
 import software.amazon.awssdk.services.s3.model.ObjectIdentifier
 import software.amazon.awssdk.services.s3.model.PutObjectRequest
 import software.amazon.awssdk.services.s3.model.PutObjectResponse
-import software.amazon.awssdk.core.ResponseInputStream
-import java.nio.file.Path
-import java.nio.file.Files
-import scala.util.Try
 
 /** AWS controller (S3 + EMR clients).
   */
@@ -132,6 +137,31 @@ final class AWS(config: AWSConfig) extends LazyLogging {
     s3.getObject(req, dest)
     
     ()
+  }
+  
+  def eTagOf(key: String): IO[Option[String]] = {
+    def stripQuotes(s: String): String = {
+      val withoutLeadingQuote = if(s.startsWith("\"")) s.drop(1) else s
+      
+      if(withoutLeadingQuote.endsWith("\"")) withoutLeadingQuote.dropRight(1) else withoutLeadingQuote
+    }
+    
+    getMetadataField(key)(response => stripQuotes(response.eTag))
+  }
+  
+  def lastModifiedTimeOf(key: String): IO[Option[Instant]] = getMetadataField(key)(_.lastModified)
+  
+  private def getMetadataField[A](key: String)(field: GetObjectResponse => A): IO[Option[A]] = IO {
+    val req = GetObjectRequest.builder.bucket(bucket).key(key).range("0-0").build
+    
+    Try(s3.getObject(req)) match {
+      case Success(responseStream) => {
+        try { Option(field(responseStream.response)) }
+        finally { responseStream.close() }    
+      }
+      case Failure(_: NoSuchKeyException) => None 
+      case Failure(e) => throw e 
+    }
   }
 
   /** Fetch a file from an S3 bucket (does not download content).

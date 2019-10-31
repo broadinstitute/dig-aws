@@ -1,28 +1,21 @@
 package org.broadinstitute.dig.aws
 
-import cats._
-import cats.effect._
-import cats.implicits._
-
-import java.nio.charset.Charset
-
-import org.scalatest.FunSuite
-
-import scala.collection.mutable.ArrayBuffer
-import scala.collection.mutable.Buffer
-import org.json4s.Formats
-import org.json4s.DefaultFormats
-import org.json4s.jackson.Serialization.read
-import org.broadinstitute.dig.aws.config.emr.EmrConfig
-import org.broadinstitute.dig.aws.config.AWSConfig
-import scala.io.Source
 import java.io.File
-import software.amazon.awssdk.services.s3.model.S3Object
-import software.amazon.awssdk.core.ResponseInputStream
-import java.nio.file.Paths
-import java.nio.file.Files
 import java.nio.charset.StandardCharsets
+import java.nio.file.Files
+import java.nio.file.Paths
+import java.time.Instant
 
+import scala.io.Source
+
+import org.broadinstitute.dig.aws.config.AWSConfig
+import org.broadinstitute.dig.aws.config.emr.EmrConfig
+import org.json4s.DefaultFormats
+import org.json4s.Formats
+import org.json4s.jackson.Serialization.read
+
+import cats.effect.IO
+import cats.implicits._
 
 
 /**
@@ -44,6 +37,10 @@ final class AwsTest extends AwsFunSuite {
     
     new AWS(awsConfig)
   }
+  
+  testWithPseudoDirIO("ETagLastModified") {
+    doETagLastModifiedTest
+  }
 
   /**
     * Create a cluster and run a simple script job.
@@ -63,7 +60,6 @@ final class AwsTest extends AwsFunSuite {
   testWithPseudoDirIO("PutGetFile") {
     doPutGetFileTest
   }
-
 
   /**
     * Make a pseudo-dir, then make the same one again with different metadata
@@ -311,6 +307,30 @@ final class AwsTest extends AwsFunSuite {
 
       //Convert to sets to ignore ordering
       assert(contents0.toSet == Set(s"${pseudoDirKey}/metadata"))
+      ()
+    }
+  }
+  
+  private lazy val doETagLastModifiedTest: String => IO[Unit] = { pseudoDirKey =>
+    val key = s"${pseudoDirKey}/foo.txt"
+    
+    val now = Instant.now
+    
+    for {
+      missingETag <- aws.eTagOf(key)
+      missingLastModified <- aws.lastModifiedTimeOf(key)
+      nonExistentKeyExists <- aws.exists(key)
+      _ <- aws.put(key, Paths.get("src/it/resources/test_upload.txt"))
+      eTag <- aws.eTagOf(key)
+      lastModified <- aws.lastModifiedTimeOf(key)
+    } yield {
+      assert(nonExistentKeyExists == false)
+      assert(missingLastModified === None)
+      assert(missingETag == None)
+      
+      assert(eTag.get == "76323bb2bba387d27f9e2a5d17c03ac2")
+      assert(lastModified.get.toEpochMilli >= now.toEpochMilli)
+      
       ()
     }
   }
