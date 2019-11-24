@@ -19,6 +19,12 @@ object InstanceType {
   val m5_12xlarge = InstanceType("m5.12xlarge")
   val m5_24xlarge = InstanceType("m5.24xlarge")
 
+  /** Memory-optimized. */
+  val r5_2xlarge  = InstanceType("r5.2xlarge")
+  val r5_4xlarge  = InstanceType("r5.4xlarge")
+  val r5_8xlarge = InstanceType("r5.8xlarge")
+  val r5_12xlarge = InstanceType("r5.12xlarge")
+
   /** Compute-optimized. */
   val c5_2xlarge  = InstanceType("c5.2xlarge")
   val c5_4xlarge  = InstanceType("c5.4xlarge")
@@ -31,6 +37,10 @@ object InstanceType {
     case JString("m5.4xlarge")  => m5_4xlarge
     case JString("m5.12xlarge") => m5_12xlarge
     case JString("m5.24xlarge") => m5_24xlarge
+    case JString("r5.2xlarge")  => r5_2xlarge
+    case JString("r5.4xlarge")  => r5_4xlarge
+    case JString("r5.8xlarge") => r5_8xlarge
+    case JString("r5.12xlarge") => r5_12xlarge
     case JString("c5.2xlarge")  => c5_2xlarge
     case JString("c5.4xlarge")  => c5_4xlarge
     case JString("c5.9xlarge")  => c5_9xlarge
