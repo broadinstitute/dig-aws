@@ -1,16 +1,16 @@
 lazy val Versions = new {
   val Aws              = "2.7.33"
-  val Cats             = "1.5.0"
-  val CatsEffect       = "1.1.0"
+  val Cats             = "2.1.0"
+  val CatsEffect       = "2.0.0"
   val Janino           = "3.0.8"
   val LogbackClassic   = "1.2.3"
   val LogbackColorizer = "1.0.1"
-  val Scala            = "2.12.10"
-  val ScalaLogging     = "3.7.2"
+  val Scala            = "2.13.1"
+  val ScalaLogging     = "3.9.2"
   val ScalaTest        = "3.0.8"
   val Slf4J            = "1.7.25"
-  val Json4s           = "3.5.3"
-  val Fs2              = "1.0.1"
+  val Json4s           = "3.6.7"
+  val Fs2              = "2.2.1"
   val TypesafeConfig   = "1.3.4"
   val Ficus            = "1.4.7"
 }
@@ -23,7 +23,7 @@ lazy val scalacOpts = Seq(
   "-feature",
   "-deprecation",
   "-unchecked",
-  "-Ypartial-unification",
+//  "-Ypartial-unification",
   "-Ywarn-value-discard"
 )
 
