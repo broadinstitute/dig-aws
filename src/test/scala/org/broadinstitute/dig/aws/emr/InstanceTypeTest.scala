@@ -10,11 +10,11 @@ import org.json4s._
 final class InstanceTypeTest extends FunSuite {
   test("deserialize") {
     import InstanceType._
-    import org.json4s.jackson.Serialization.{write, read}
-    
-    implicit val formats = DefaultFormats
+    import org.json4s.jackson.Serialization.read
     
     def doTest(expected: InstanceType, serialized: String): Unit = {
+      implicit val formats = DefaultFormats
+      
       assert(deserialize(read[JValue](serialized)) === expected)
       
       ()
