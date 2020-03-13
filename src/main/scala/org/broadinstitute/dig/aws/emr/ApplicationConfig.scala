@@ -10,7 +10,8 @@ import scala.collection.JavaConverters._
 final case class ApplicationConfig(
     classification: String,
     configs: Seq[ClassificationProperties] = Seq.empty,
-    props: Seq[(String, String)] = Seq.empty) {
+    props: Seq[(String, String)] = Seq.empty,
+) {
 
   /** Create a new App with additional configuration properties. */
   def withConfig(newConfigs: ClassificationProperties*): ApplicationConfig = copy(configs = this.configs ++ newConfigs)
