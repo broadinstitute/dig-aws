@@ -7,21 +7,16 @@ import scala.collection.JavaConverters._
   *
   * See: https://docs.aws.amazon.com/emr/latest/ReleaseGuide/emr-configure-apps.html
   */
-final case class ApplicationConfig(classification: String) {
-  var configs: Seq[ClassificationProperties] = Seq.empty
-  var props: Seq[(String, String)] = Seq.empty
+final case class ApplicationConfig(
+    classification: String,
+    configs: Seq[ClassificationProperties] = Seq.empty,
+    props: Seq[(String, String)] = Seq.empty) {
 
   /** Create a new App with additional configuration properties. */
-  def withConfig(configs: ClassificationProperties*): ApplicationConfig = {
-    this.configs = this.configs ++ configs
-    this
-  }
+  def withConfig(newConfigs: ClassificationProperties*): ApplicationConfig = copy(configs = this.configs ++ newConfigs)
 
   /** Add a property to this application configuration. */
-  def withProperty(props: (String, String)*): ApplicationConfig = {
-    this.props = this.props ++ props
-    this
-  }
+  def withProperty(newProps: (String, String)*): ApplicationConfig = copy(props = this.props ++ newProps)
 
   /** Create the EMR Configuration for this application. */
   def configuration: Configuration =
