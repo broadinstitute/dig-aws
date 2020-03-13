@@ -8,3 +8,6 @@ project/target
 project/project/target
 /bin/
 src/it/resources/config.json
+.idea/
+project/.idea/
+project/project/

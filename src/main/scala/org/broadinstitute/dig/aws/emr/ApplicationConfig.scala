@@ -7,18 +7,24 @@ import scala.collection.JavaConverters._
   *
   * See: https://docs.aws.amazon.com/emr/latest/ReleaseGuide/emr-configure-apps.html
   */
-final case class ApplicationConfig(classification: String, configs: ClassificationProperties*) {
+final case class ApplicationConfig(
+    classification: String,
+    configs: Seq[ClassificationProperties] = Seq.empty,
+    props: Seq[(String, String)] = Seq.empty,
+) {
 
   /** Create a new App with additional configuration properties. */
-  def withConfig(config: ClassificationProperties): ApplicationConfig = {
-    ApplicationConfig(classification, configs :+ config: _*)
-  }
+  def withConfig(newConfigs: ClassificationProperties*): ApplicationConfig = copy(configs = this.configs ++ newConfigs)
+
+  /** Add a property to this application configuration. */
+  def withProperty(newProps: (String, String)*): ApplicationConfig = copy(props = this.props ++ newProps)
 
   /** Create the EMR Configuration for this application. */
   def configuration: Configuration =
     Configuration.builder
       .classification(classification)
       .configurations(configs.map(_.configuration).asJava)
+      .properties(props.toMap.asJava)
       .build
 }
 
@@ -44,8 +50,12 @@ final case class ClassificationProperties(classification: String, properties: (S
 object ApplicationConfig {
 
   /** Some common configurations that can be extended. */
-  val sparkDefaults = ApplicationConfig("spark-defaults")
-  val sparkEnv      = ApplicationConfig("spark-env")
+  val sparkDefaults: ApplicationConfig = ApplicationConfig("spark-defaults")
+  val sparkEnv: ApplicationConfig      = ApplicationConfig("spark-env")
+
+  /** A common configuration for Spark */
+  var sparkMaximizeResourceAllocation: ApplicationConfig = ApplicationConfig("spark")
+    .withProperty("maximizeResourceAllocation" -> "true")
 }
 
 /** Companion object with typical properties.
@@ -53,5 +63,5 @@ object ApplicationConfig {
 object ClassificationProperties {
 
   /** Python3 spark configuration setting. */
-  val sparkUsePython3 = ClassificationProperties("export", "PYSPARK_PYTHON" -> "/usr/bin/python3")
+  val sparkUsePython3: ClassificationProperties = ClassificationProperties("export", "PYSPARK_PYTHON" -> "/usr/bin/python3")
 }
