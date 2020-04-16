@@ -283,8 +283,8 @@ final class AWS(config: AWSConfig) extends LazyLogging {
             case Right(steps) => IO {
               val pending = steps.count(_.isPending)
 
-              // always keep jobs pending in the cluster so it doesn't terminate
-              if (pending < 5 && jobsQueue.nonEmpty) {
+              // always keep jobs pending in the cluster...
+              if (pending < 2 && jobsQueue.nonEmpty) {
                 logger.debug(s"Adding job step(s) to ${cluster.jobFlowId}.")
                 addJobToCluster(cluster)
               }
