@@ -14,6 +14,7 @@ import org.broadinstitute.dig.aws.emr.Cluster
 import com.typesafe.scalalogging.LazyLogging
 
 import cats.effect.ContextShift
+import cats.effect.ExitCase
 import cats.effect.IO
 import cats.effect.Timer
 import cats.implicits._
@@ -27,6 +28,7 @@ import software.amazon.awssdk.services.emr.model.ListStepsRequest
 import software.amazon.awssdk.services.emr.model.RunJobFlowRequest
 import software.amazon.awssdk.services.emr.model.RunJobFlowResponse
 import software.amazon.awssdk.services.emr.model.StepSummary
+import software.amazon.awssdk.services.emr.model.TerminateJobFlowsRequest
 import software.amazon.awssdk.services.s3.S3Client
 import software.amazon.awssdk.services.s3.model.Delete
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest
@@ -199,6 +201,7 @@ final class AWS(config: AWSConfig) extends LazyLogging {
       .ec2KeyName(config.emr.sshKeyName)
       .keepJobFlowAliveWhenNoSteps(cluster.keepAliveWhenNoSteps)
       .instanceGroups(cluster.instanceGroups.asJava)
+      .keepJobFlowAliveWhenNoSteps(true)
       .build
 
     // create the request for the cluster
@@ -280,8 +283,8 @@ final class AWS(config: AWSConfig) extends LazyLogging {
             case Right(steps) => IO {
               val pending = steps.count(_.isPending)
 
-              // add another job from the queue to the cluster
-              if (pending < 3 && jobsQueue.nonEmpty) {
+              // always keep jobs pending in the cluster so it doesn't terminate
+              if (pending < 5 && jobsQueue.nonEmpty) {
                 logger.debug(s"Adding job step(s) to ${cluster.jobFlowId}.")
                 addJobToCluster(cluster)
               }
@@ -309,10 +312,20 @@ final class AWS(config: AWSConfig) extends LazyLogging {
         }
       }
 
-      // wait until the queue is done
+      // called after processing (whether error or success) to terminate all the clusters
+      val terminateClusters: IO[Unit] = IO {
+        val req = TerminateJobFlowsRequest.builder.jobFlowIds(clusters.map(_.jobFlowId).asJava).build
+
+        emr.terminateJobFlows(req)
+      }
+
+      // wait until the queue is done or an error
       for {
         _ <- IO(logger.info(s"${clusters.size} job flows created; 0/$totalSteps steps complete."))
-        _ <- processJobQueue()
+        _ <- processJobQueue().guaranteeCase {
+          case ExitCase.Error(e) => terminateClusters >> IO.raiseError(e)
+          case _                 => terminateClusters
+        }
       } yield ()
     }
   }
