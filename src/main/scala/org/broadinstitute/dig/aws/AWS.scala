@@ -17,8 +17,10 @@ import cats.effect.ContextShift
 import cats.effect.IO
 import cats.effect.Timer
 import cats.implicits._
+
 import software.amazon.awssdk.core.sync.RequestBody
 import software.amazon.awssdk.services.emr.EmrClient
+import software.amazon.awssdk.services.emr.model.AddJobFlowStepsRequest
 import software.amazon.awssdk.services.emr.model.JobFlowInstancesConfig
 import software.amazon.awssdk.services.emr.model.ListStepsRequest
 import software.amazon.awssdk.services.emr.model.RunJobFlowRequest
@@ -181,10 +183,10 @@ final class AWS(config: AWSConfig) extends LazyLogging {
     } yield response
   }
 
-  /** Create a job request that will be used to create a new EMR cluster and
-    * run a series of steps.
+  /** Create a new cluster with some initial job steps and return the job
+    * flow response, which can be used to add additional steps later.
     */
-  def runJob(cluster: Cluster, steps: Seq[JobStep]): IO[RunJobFlowResponse] = {
+  def createCluster(cluster: Cluster, steps: Seq[JobStep]): IO[RunJobFlowResponse] = {
     val bootstrapConfigs = cluster.bootstrapScripts.map(_.config)
     val allSteps         = cluster.bootstrapSteps ++ steps
 
@@ -212,116 +214,99 @@ final class AWS(config: AWSConfig) extends LazyLogging {
       .visibleToAllUsers(cluster.visibleToAllUsers)
       .instances(instances)
       .steps(allSteps.map(_.config).asJava)
-      
+
+    // use a custom AMI
     val requestBuilder = cluster.amiId match {
       case Some(id) => baseRequestBuilder.customAmiId(id.value)
       case None     => baseRequestBuilder
     }
-    
+
+    // create the request
     val request = requestBuilder.build
 
     // create the IO action to launch the instance
-    IO {
-      val job = emr.runJobFlow(request)
-
-      // show the cluster, job ID and # of total steps being executed
-      logger.info(s"Starting ${cluster.name} as ${job.jobFlowId} with ${steps.size} steps")
-
-      // return the job
-      job
-    }
+    IO(emr.runJobFlow(request))
   }
 
-  /** Helper: create a job that's a single step.
+  /** Spin up a set of clusters from a definition along with a set of jobs
+    * that need to run (in any order!). As a cluster becomes available
+    * steps from the various jobs will be sent to it for running.
     */
-  def runJob(cluster: Cluster, step: JobStep): IO[RunJobFlowResponse] = runJob(cluster, Seq(step))
+  def runJobs(cluster: Cluster, jobs: Seq[Seq[JobStep]], maxParallel: Int = 5)(implicit timer: Timer[IO] = Implicits.Defaults.timer): IO[Unit] = {
+    val jobList = Random.shuffle(jobs).toList
+    val totalSteps = jobList.flatten.size
 
-  /** Periodically send a request to the cluster to determine the state of all
-    * steps in the job. Log output showing the % complete the jobs is or throw
-    * an exception if the job failed or was interrupt/cancelled.
-    */
-  def waitForJob(
-      job: RunJobFlowResponse, 
-      stepsComplete: Int = 0)(implicit timer: Timer[IO] = Implicits.Defaults.timer): IO[RunJobFlowResponse] = {
-    // wait a little bit then get the status of all steps in the job
-    val getStatus = for (_ <- IO.sleep(60.seconds)) yield {
-      val req = ListStepsRequest.builder.clusterId(job.jobFlowId).build
+    // determine the initial jobs to spin up each cluster with
+    val (initialJobs, remainingJobs) = jobList.splitAt(maxParallel)
+    var lastStepsCompleted = 0
 
-      // extract the steps from the request response; aws reverses them
-      val steps = emr.listSteps(req).steps.asScala.reverse
+    // create a cluster for each initial, parallel job
+    initialJobs.map(job => createCluster(cluster, job)).sequence.flatMap { clusters =>
+      val jobsQueue = scala.collection.mutable.Queue(remainingJobs: _*)
 
-      // count all the completes, failures, etc.
-      steps.foldLeft(Right(0, steps.size): Either[StepSummary, (Int, Int)]) {
-        case (Left(step), _)                          => Left(step)
-        case (Right((n, m)), step) if step.isComplete => Right(n + 1, m)
-        case (_, step) if step.isStopped              => Left(step)
-        case (x, _)                                   => x
+      // take the next job in the queue and add it to the cluster
+      def addJobToCluster(cluster: RunJobFlowResponse): IO[Unit] = {
+        val job = jobsQueue.dequeue()
+        val req = AddJobFlowStepsRequest.builder
+          .jobFlowId(cluster.jobFlowId)
+          .steps(job.map(_.config).asJava)
+          .build
+
+        IO(emr.addJobFlowSteps(req)).as(())
       }
-    }
 
-    // get the status, log appropriately, and continue or stop
-    getStatus.flatMap {
-      case Left(step) =>
-        logger.error(s"Job ${job.jobFlowId} failed: ${step.stopReason}.")
+      // check status and perform action for each cluster
+      val processClusters: IO[Int] = {
+        var stepsCompleted = 0
 
-        // terminate the program
-        IO.raiseError(new Exception(step.stopReason))
+        // determine the IO action to perform for each cluster
+        val clusterActions = clusters.map { cluster =>
+          val req = ListStepsRequest.builder.clusterId(cluster.jobFlowId).build
+          val steps = emr.listSteps(req).steps.asScala
 
-      case Right((n, m)) =>
-        if (n != stepsComplete) {
-          logger.info(s"Job ${job.jobFlowId} progress: $n/$m steps complete.")
+          // cluster state is either a failed step (Left) or # of steps in queue (Right)
+          val state = steps.foldLeft(Right(0): Either[StepSummary, Int]) {
+            case (Left(step), _)                       => Left(step)
+            case (Right(inQ), step) if step.isComplete => stepsCompleted += 1; Right(inQ)
+            case (Right(inQ), step) if step.isPending  => Right(inQ + 1)
+            case (Right(inQ), step) if step.isRunning  => Right(inQ + 1)
+            case (_, step)                             => Left(step)
+          }
+
+          // given cluster state, fail, queue job, or do nothing
+          state match {
+            case Left(failedStep)      => IO.raiseError(new Exception(failedStep.stopReason))
+            case Right(inQ) if inQ < 3 => addJobToCluster(cluster)
+            case _                     => IO.unit
+          }
         }
 
-        // return the job on completion or continue waiting...
-        if (n == m) IO(job) else waitForJob(job, n)
+        // perform all the actions serially, return the steps completed
+        clusterActions.sequence >> IO(stepsCompleted)
+      }
+
+      // repeatedly wait 60 seconds and then process the clusters
+      def processJobQueue(): IO[Unit] = {
+        (IO.sleep(60.seconds) >> processClusters).flatMap { stepsCompleted =>
+          if (stepsCompleted > lastStepsCompleted) {
+            logger.info(s"Job queue progress: $stepsCompleted/$totalSteps steps complete.")
+            lastStepsCompleted = stepsCompleted
+          }
+
+          // recurse until complete
+          if (stepsCompleted < totalSteps) processJobQueue() else IO.unit
+        }
+      }
+
+      // wait until the queue is done
+      for {
+        _  <- IO(logger.info(s"${clusters.size} job flows created; 0/$totalSteps steps complete."))
+        _ <- processJobQueue()
+      } yield ()
     }
   }
 
-  /**
-    * Given a sequence of jobs, run them in parallel, but limit the maximum
-    * concurrency so too many clusters aren't created at once.
+  /** Helper: create a single job.
     */
-  def waitForJobs(jobs: Seq[IO[RunJobFlowResponse]], maxClusters: Int = 5)
-                 (implicit contextShift: ContextShift[IO] = Implicits.Defaults.contextShift): IO[Unit] = {
-    Utils.waitForTasks(jobs, maxClusters) { job =>
-      job.flatMap(waitForJob(_))
-    }
-  }
-
-  /** Often times there are N jobs that are all identical (aside from command
-    * line parameters) that need to be run, and can be run in parallel.
-    *
-    * This can be done by spinning up a unique cluster for each, but has the
-    * downside that the provisioning step (which can take several minutes) is
-    * run for each job.
-    *
-    * This function allows a list of "jobs" (read: a list of a list of steps)
-    * to be passed, and N clusters will be made that will run through all the
-    * jobs until complete. This way the provisioning costs are only paid for
-    * once.
-    *
-    * This should only be used if all the jobs can be run in parallel.
-    *
-    * NOTE: The jobs are shuffled so that jobs that may be large and clumped
-    *       together won't happen every time the jobs run together.
-    */
-  def clusterJobs(cluster: Cluster, jobs: Seq[Seq[JobStep]], maxClusters: Int = 5): Seq[IO[RunJobFlowResponse]] = {
-    val indexedJobs = Random.shuffle(jobs).zipWithIndex.map {
-      case (job, i) => (i % maxClusters, job)
-    }
-
-    // bootstrap steps + job steps
-    val totalSteps = cluster.bootstrapSteps.size * maxClusters + jobs.flatten.size
-
-    // AWS limit of 256 steps per job cluster
-    require(totalSteps <= maxClusters * 256)
-
-    // round-robin each job into a cluster
-    val clusteredJobs = indexedJobs.groupBy(_._1).mapValues(_.map(_._2))
-
-    // for each cluster, create a "job" that's all the steps appended
-    clusteredJobs.values
-      .map(jobs => runJob(cluster, jobs.flatten))
-      .toSeq
-  }
+  def runJob(cluster: Cluster, steps: JobStep*): IO[Unit] = runJobs(cluster, Seq(steps))
 }
