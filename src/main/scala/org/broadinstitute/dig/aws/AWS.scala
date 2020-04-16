@@ -21,6 +21,7 @@ import cats.implicits._
 import software.amazon.awssdk.core.sync.RequestBody
 import software.amazon.awssdk.services.emr.EmrClient
 import software.amazon.awssdk.services.emr.model.AddJobFlowStepsRequest
+import software.amazon.awssdk.services.emr.model.AddJobFlowStepsResponse
 import software.amazon.awssdk.services.emr.model.JobFlowInstancesConfig
 import software.amazon.awssdk.services.emr.model.ListStepsRequest
 import software.amazon.awssdk.services.emr.model.RunJobFlowRequest
@@ -233,7 +234,7 @@ final class AWS(config: AWSConfig) extends LazyLogging {
     * steps from the various jobs will be sent to it for running.
     */
   def runJobs(cluster: Cluster, jobs: Seq[Seq[JobStep]], maxParallel: Int = 5)(implicit timer: Timer[IO] = Implicits.Defaults.timer): IO[Unit] = {
-    val jobList = Random.shuffle(jobs).toList
+    val jobList = jobs.toList
     val totalSteps = jobList.flatten.size
 
     // determine the initial jobs to spin up each cluster with
@@ -245,50 +246,61 @@ final class AWS(config: AWSConfig) extends LazyLogging {
       val jobsQueue = scala.collection.mutable.Queue(remainingJobs: _*)
 
       // take the next job in the queue and add it to the cluster
-      def addJobToCluster(cluster: RunJobFlowResponse): IO[Unit] = IO {
+      def addJobToCluster(cluster: RunJobFlowResponse): AddJobFlowStepsResponse = {
         val job = jobsQueue.dequeue()
         val req = AddJobFlowStepsRequest.builder
           .jobFlowId(cluster.jobFlowId)
           .steps(job.map(_.config).asJava)
           .build
 
+        // get the response and the list of steps added
         emr.addJobFlowSteps(req)
-        ()
       }
 
       // check status and perform action for each cluster
       val processClusters: IO[Int] = {
-        var stepsCompleted = 0
+        val clusterActions = for (cluster <- clusters) yield {
 
-        // determine the IO action to perform for each cluster
-        val clusterActions = clusters.map { cluster =>
-          val req = ListStepsRequest.builder.clusterId(cluster.jobFlowId).build
-          val steps = emr.listSteps(req).steps.asScala
+          // first get the list of all steps in the job flow
+          val stepsState = IO {
+            val req = ListStepsRequest.builder.clusterId(cluster.jobFlowId).build
+            val steps = emr.listStepsPaginator(req).steps.asScala
 
-          // cluster state is either a failed step (Left) or # of steps in queue (Right)
-          val state = steps.foldLeft(Right(0): Either[StepSummary, Int]) {
-            case (Left(step), _)                       => Left(step)
-            case (Right(inQ), step) if step.isComplete => stepsCompleted += 1; Right(inQ)
-            case (Right(inQ), step) if step.isPending  => Right(inQ + 1)
-            case (Right(inQ), step) if step.isRunning  => Right(inQ + 1)
-            case (_, step)                             => Left(step)
+            // either left (failed step) or right (all steps)
+            steps.foldLeft(Right(List.empty): Either[StepSummary, List[StepSummary]]) {
+              case (Left(step), _)             => Left(step)
+              case (_, step) if step.isFailure => Left(step)
+              case (Right(steps), step)        => Right(steps :+ step)
+            }
           }
 
-          // given cluster state, fail, queue job, or do nothing
-          state match {
-            case Left(failedStep) => IO.raiseError(new Exception(failedStep.stopReason))
-            case Right(inQ) if (inQ < 4) && (jobsQueue.nonEmpty) => addJobToCluster(cluster)
-            case _ => IO.unit
+          // cluster action based on step state
+          stepsState.flatMap { state =>
+            state match {
+              case Left(failedStep) => IO.raiseError(new Exception(failedStep.stopReason))
+              case Right(steps) => IO {
+                val pending = steps.count(_.isPending)
+
+                // add another job from the queue to the cluster
+                if (pending < 3 && jobsQueue.nonEmpty) {
+                  logger.info(s"Adding job steps to ${cluster.jobFlowId}.")
+                  addJobToCluster(cluster)
+                }
+
+                // return the total number of steps completed
+                steps.count(_.isComplete)
+              }
+            }
           }
         }
 
-        // perform all the actions serially, return the steps completed
-        clusterActions.sequence >> IO(stepsCompleted)
+        // perform all the actions serially, sum the steps completed
+        clusterActions.sequence.map(_.sum)
       }
 
-      // repeatedly wait 60 seconds and then process the clusters
+      // repeatedly wait (see AWS poll rate limiting!) and then process the clusters
       def processJobQueue(): IO[Unit] = {
-        (IO.sleep(60.seconds) >> processClusters).flatMap { stepsCompleted =>
+        (IO.sleep(30.seconds) >> processClusters).flatMap { stepsCompleted =>
           if (stepsCompleted > lastStepsCompleted) {
             logger.info(s"Job queue progress: $stepsCompleted/$totalSteps steps complete.")
             lastStepsCompleted = stepsCompleted
