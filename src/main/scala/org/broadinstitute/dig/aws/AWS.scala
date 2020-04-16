@@ -275,21 +275,19 @@ final class AWS(config: AWSConfig) extends LazyLogging {
           }
 
           // cluster action based on step state
-          stepsState.flatMap { state =>
-            state match {
-              case Left(failedStep) => IO.raiseError(new Exception(failedStep.stopReason))
-              case Right(steps) => IO {
-                val pending = steps.count(_.isPending)
+          stepsState.flatMap {
+            case Left(failedStep) => IO.raiseError(new Exception(failedStep.stopReason))
+            case Right(steps) => IO {
+              val pending = steps.count(_.isPending)
 
-                // add another job from the queue to the cluster
-                if (pending < 3 && jobsQueue.nonEmpty) {
-                  logger.debug(s"Adding job step(s) to ${cluster.jobFlowId}.")
-                  addJobToCluster(cluster)
-                }
-
-                // return the total number of steps completed
-                steps.count(_.isComplete)
+              // add another job from the queue to the cluster
+              if (pending < 3 && jobsQueue.nonEmpty) {
+                logger.debug(s"Adding job step(s) to ${cluster.jobFlowId}.")
+                addJobToCluster(cluster)
               }
+
+              // return the total number of steps completed
+              steps.count(_.isComplete)
             }
           }
         }
