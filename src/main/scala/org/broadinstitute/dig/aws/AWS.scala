@@ -245,14 +245,15 @@ final class AWS(config: AWSConfig) extends LazyLogging {
       val jobsQueue = scala.collection.mutable.Queue(remainingJobs: _*)
 
       // take the next job in the queue and add it to the cluster
-      def addJobToCluster(cluster: RunJobFlowResponse): IO[Unit] = {
+      def addJobToCluster(cluster: RunJobFlowResponse): IO[Unit] = IO {
         val job = jobsQueue.dequeue()
         val req = AddJobFlowStepsRequest.builder
           .jobFlowId(cluster.jobFlowId)
           .steps(job.map(_.config).asJava)
           .build
 
-        IO(emr.addJobFlowSteps(req)).as(())
+        emr.addJobFlowSteps(req)
+        ()
       }
 
       // check status and perform action for each cluster
@@ -275,9 +276,9 @@ final class AWS(config: AWSConfig) extends LazyLogging {
 
           // given cluster state, fail, queue job, or do nothing
           state match {
-            case Left(failedStep)      => IO.raiseError(new Exception(failedStep.stopReason))
-            case Right(inQ) if inQ < 3 => addJobToCluster(cluster)
-            case _                     => IO.unit
+            case Left(failedStep) => IO.raiseError(new Exception(failedStep.stopReason))
+            case Right(inQ) if (inQ < 4) && (jobsQueue.nonEmpty) => addJobToCluster(cluster)
+            case _ => IO.unit
           }
         }
 
@@ -300,7 +301,7 @@ final class AWS(config: AWSConfig) extends LazyLogging {
 
       // wait until the queue is done
       for {
-        _  <- IO(logger.info(s"${clusters.size} job flows created; 0/$totalSteps steps complete."))
+        _ <- IO(logger.info(s"${clusters.size} job flows created; 0/$totalSteps steps complete."))
         _ <- processJobQueue()
       } yield ()
     }
