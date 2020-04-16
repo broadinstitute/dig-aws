@@ -283,7 +283,7 @@ final class AWS(config: AWSConfig) extends LazyLogging {
 
                 // add another job from the queue to the cluster
                 if (pending < 3 && jobsQueue.nonEmpty) {
-                  logger.info(s"Adding job steps to ${cluster.jobFlowId}.")
+                  logger.debug(s"Adding job step(s) to ${cluster.jobFlowId}.")
                   addJobToCluster(cluster)
                 }
 
