@@ -242,6 +242,12 @@ final class AWS(config: AWSConfig) extends LazyLogging {
 
     // determine the initial jobs to spin up each cluster with
     val (initialJobs, remainingJobs) = jobList.splitAt(maxParallel)
+
+    // seconds to wait between cluster status checks and min pending steps per cluster
+    val pollPeriod = 2.minutes
+    val stepsPerJobFlow = 2
+
+    // total number of steps completed
     var lastStepsCompleted = 0
 
     // create a cluster for each initial, parallel job
@@ -289,14 +295,13 @@ final class AWS(config: AWSConfig) extends LazyLogging {
             case Left(failedStep) => IO.raiseError(new Exception(failedStep.stopReason))
             case Right(steps) => IO {
               val pending = steps.count(_.isPending)
-              val n = 5
 
               // always keep steps pending in the cluster...
-              if (pending < n && jobsQueue.nonEmpty) {
+              if (pending < stepsPerJobFlow && jobsQueue.nonEmpty) {
                 logger.debug(s"Adding job step(s) to ${cluster.jobFlowId}.")
 
                 // add multiple steps per request to ensure rate limit isn't exceeded
-                addStepsToCluster(cluster, n - pending)
+                addStepsToCluster(cluster, stepsPerJobFlow - pending)
               }
 
               // return the total number of steps completed
@@ -311,7 +316,7 @@ final class AWS(config: AWSConfig) extends LazyLogging {
 
       // repeatedly wait (see AWS poll rate limiting!) and then process the clusters
       def processJobQueue(): IO[Unit] = {
-        (IO.sleep(60.seconds) >> processClusters).flatMap { stepsCompleted =>
+        (IO.sleep(pollPeriod) >> processClusters).flatMap { stepsCompleted =>
           if (stepsCompleted > lastStepsCompleted) {
             logger.info(s"Job queue progress: $stepsCompleted/$totalSteps steps complete.")
             lastStepsCompleted = stepsCompleted
