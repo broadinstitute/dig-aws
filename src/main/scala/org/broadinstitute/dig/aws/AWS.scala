@@ -237,7 +237,7 @@ final class AWS(config: AWSConfig) extends LazyLogging {
     * steps from the various jobs will be sent to it for running.
     */
   def runJobs(cluster: Cluster, jobs: Seq[Seq[JobStep]], maxParallel: Int = 5)(implicit timer: Timer[IO] = Implicits.Defaults.timer): IO[Unit] = {
-    val jobList = jobs.toList
+    val jobList = Random.shuffle(jobs).toList
     val totalSteps = jobList.flatten.size
 
     // determine the initial jobs to spin up each cluster with
@@ -314,9 +314,11 @@ final class AWS(config: AWSConfig) extends LazyLogging {
 
       // called after processing (whether error or success) to terminate all the clusters
       val terminateClusters: IO[Unit] = IO {
-        val req = TerminateJobFlowsRequest.builder.jobFlowIds(clusters.map(_.jobFlowId).asJava).build
+        val flowIds = clusters.map(_.jobFlowId).asJava
+        val req = TerminateJobFlowsRequest.builder.jobFlowIds(flowIds).build
 
         emr.terminateJobFlows(req)
+        ()
       }
 
       // wait until the queue is done or an error
