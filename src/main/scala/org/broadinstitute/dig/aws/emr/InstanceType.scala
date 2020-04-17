@@ -18,7 +18,9 @@ object InstanceType {
   /** General-purpose, balanced. */
   val m5_2xlarge  = InstanceType("m5.2xlarge")
   val m5_4xlarge  = InstanceType("m5.4xlarge")
+  val m5_8xlarge  = InstanceType("m5.8xlarge")
   val m5_12xlarge = InstanceType("m5.12xlarge")
+  val m5_16xlarge = InstanceType("m5.16xlarge")
   val m5_24xlarge = InstanceType("m5.24xlarge")
 
   /** Memory-optimized. */
