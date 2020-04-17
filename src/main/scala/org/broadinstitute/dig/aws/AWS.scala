@@ -249,14 +249,21 @@ final class AWS(config: AWSConfig) extends LazyLogging {
       val jobsQueue = scala.collection.mutable.Queue(remainingJobs: _*)
 
       // take the next job in the queue and add it to the cluster
-      def addJobToCluster(cluster: RunJobFlowResponse): AddJobFlowStepsResponse = {
-        val job = jobsQueue.dequeue()
+      def addStepsToCluster(cluster: RunJobFlowResponse, nSteps: Int = 1): AddJobFlowStepsResponse = {
+        var steps = jobsQueue.dequeue()
+
+        // keep popping jobs until the minimum number of steps is reached
+        while(steps.size < nSteps && jobsQueue.nonEmpty) {
+          steps = steps ++ jobsQueue.dequeue()
+        }
+
+        // add all the steps via a single request
         val req = AddJobFlowStepsRequest.builder
           .jobFlowId(cluster.jobFlowId)
-          .steps(job.map(_.config).asJava)
+          .steps(steps.map(_.config).asJava)
           .build
 
-        // get the response and the list of steps added
+        // get the list of steps added
         emr.addJobFlowSteps(req)
       }
 
@@ -282,11 +289,14 @@ final class AWS(config: AWSConfig) extends LazyLogging {
             case Left(failedStep) => IO.raiseError(new Exception(failedStep.stopReason))
             case Right(steps) => IO {
               val pending = steps.count(_.isPending)
+              val n = 5
 
-              // always keep jobs pending in the cluster...
-              if (pending < 5 && jobsQueue.nonEmpty) {
+              // always keep steps pending in the cluster...
+              if (pending < n && jobsQueue.nonEmpty) {
                 logger.debug(s"Adding job step(s) to ${cluster.jobFlowId}.")
-                addJobToCluster(cluster)
+
+                // add multiple steps per request to ensure rate limit isn't exceeded
+                addStepsToCluster(cluster, n - pending)
               }
 
               // return the total number of steps completed
