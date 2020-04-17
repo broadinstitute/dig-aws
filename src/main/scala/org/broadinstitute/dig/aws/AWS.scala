@@ -284,7 +284,7 @@ final class AWS(config: AWSConfig) extends LazyLogging {
               val pending = steps.count(_.isPending)
 
               // always keep jobs pending in the cluster...
-              if (pending < 2 && jobsQueue.nonEmpty) {
+              if (pending < 5 && jobsQueue.nonEmpty) {
                 logger.debug(s"Adding job step(s) to ${cluster.jobFlowId}.")
                 addJobToCluster(cluster)
               }
@@ -301,7 +301,7 @@ final class AWS(config: AWSConfig) extends LazyLogging {
 
       // repeatedly wait (see AWS poll rate limiting!) and then process the clusters
       def processJobQueue(): IO[Unit] = {
-        (IO.sleep(30.seconds) >> processClusters).flatMap { stepsCompleted =>
+        (IO.sleep(60.seconds) >> processClusters).flatMap { stepsCompleted =>
           if (stepsCompleted > lastStepsCompleted) {
             logger.info(s"Job queue progress: $stepsCompleted/$totalSteps steps complete.")
             lastStepsCompleted = stepsCompleted
