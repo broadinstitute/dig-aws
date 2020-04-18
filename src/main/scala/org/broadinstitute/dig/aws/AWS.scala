@@ -245,7 +245,7 @@ final class AWS(config: AWSConfig) extends LazyLogging {
 
     // seconds to wait between cluster status checks and min pending steps per cluster
     val pollPeriod = 2.minutes
-    val stepsPerJobFlow = 2
+    val pendingStepsPerJobFlow = 2
 
     // total number of steps completed
     var lastStepsCompleted = 0
@@ -297,11 +297,11 @@ final class AWS(config: AWSConfig) extends LazyLogging {
               val pending = steps.count(_.isPending)
 
               // always keep steps pending in the cluster...
-              if (pending < stepsPerJobFlow && jobsQueue.nonEmpty) {
+              if (pending < pendingStepsPerJobFlow && jobsQueue.nonEmpty) {
                 logger.debug(s"Adding job step(s) to ${cluster.jobFlowId}.")
 
                 // add multiple steps per request to ensure rate limit isn't exceeded
-                addStepsToCluster(cluster, stepsPerJobFlow - pending)
+                addStepsToCluster(cluster, pendingStepsPerJobFlow - pending)
               }
 
               // return the total number of steps completed
