@@ -284,9 +284,10 @@ final class AWS(config: AWSConfig) extends LazyLogging {
 
             // either left (failed step) or right (all steps)
             steps.foldLeft(Right(List.empty): Either[StepSummary, List[StepSummary]]) {
-              case (Left(step), _)             => Left(step)
-              case (_, step) if step.isFailure => Left(step)
-              case (Right(steps), step)        => Right(steps :+ step)
+              case (Left(step), _)              => Left(step)
+              case (_, step) if step.isFailure  => Left(step)
+              case (_, step) if step.isCanceled => Left(step)
+              case (Right(steps), step)         => Right(steps :+ step)
             }
           }
 
