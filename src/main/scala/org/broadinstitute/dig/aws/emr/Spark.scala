@@ -1,45 +1,70 @@
 package org.broadinstitute.dig.aws.emr
 
-/** ApplicationConfig for the spark. */
+/** Spark ApplicationConfig classifications and properties.
+  */
 object Spark {
-  val config: ApplicationConfig = ApplicationConfig("spark")
 
-  /** Maximize memory resources for executors. */
-  val maximizeResourceAllocation: ApplicationConfig.Property = "maximizeResourceAllocation" -> "true"
+  /** Core spark configuration. */
+  final case class Config(
+      override val classificationProperties: Seq[ClassificationProperties] = Seq.empty,
+      override val properties: Seq[(String, String)] = Seq.empty,
+  ) extends ApplicationConfig[Config] {
+    override val classification: String = "spark"
 
-  /** ApplicationConfig settings for spark-defaults. */
-  object Defaults {
-    val config: ApplicationConfig = ApplicationConfig("spark-defaults")
-
-    /** ApplicationConfig spark.executor.* properties. */
-    object Executor {
-      /** Set the memory for each executor. */
-      def memory(mem: MemorySize): ApplicationConfig.Property = "spark.executor.memory" -> mem.toString
-
-      /** Set the cores for each executor. */
-      def cores(n: Int): ApplicationConfig.Property = "spark.executor.cores" -> n.toString
-    }
-
-    /** ApplicationConfig spark.driver.* properties. */
-    object Driver {
-      /** Set the memory for each driver. */
-      def memory(mem: MemorySize): ApplicationConfig.Property = "spark.driver.memory" -> mem.toString
-
-      /** Set the cores for each driver. */
-      def cores(n: Int): ApplicationConfig.Property = "spark.driver.cores" -> n.toString
-    }
+    /** Have AWS pick good memory numbers for executors, drivers, etc. */
+    def withMaximizeResourceAllocation: Config =
+      withProperty("maximizeResourceAllocation" -> "true")
   }
 
-  /** ApplicationConfig settings for spark-env. */
-  object Env {
-    val config: ApplicationConfig = ApplicationConfig("spark-env")
+  /** ApplicationConfig for spark-defaults. */
+  final case class Defaults(
+     override val classificationProperties: Seq[ClassificationProperties] = Seq.empty,
+     override val properties: Seq[(String, String)] = Seq.empty,
+   ) extends ApplicationConfig[Defaults] {
+    override val classification: String = "spark-defaults"
 
-    /** Exported spark environment variables. */
-    object Export {
-      val properties: ClassificationProperties = ClassificationProperties("export")
+    /** Set the memory for each executor. */
+    def withExecutorMemory(mem: MemorySize): Defaults =
+      withProperty("spark.executor.memory" -> mem.toString)
 
-      /** Uses Python3 for the environment. */
-      val usePython3: ApplicationConfig.Property ="PYSPARK_PYTHON" -> "/usr/bin/python3"
+    /** Set the cores for each executor. */
+    def withExecutorCores(n: Int): Defaults =
+      withProperty("spark.executor.cores" -> n.toString)
+
+    /** Set the memory overhead for each executor. */
+    def withExecutorMemoryOverhead(mem: MemorySize): Defaults =
+      withProperty("spark.executor.memoryOverhead" -> mem.toString)
+
+    /** Set the memory overhead for the yarn executor. */
+    def withExecutorYarnMemoryOverhead(mem: MemorySize): Defaults =
+      withProperty("spark.yarn.executor.memoryOverhead" -> mem.toString)
+
+    /** Set the memory for each driver. */
+    def withDriverMemory(mem: MemorySize): Defaults =
+      withProperty("spark.driver.memory" -> mem.toString)
+
+    /** Set the cores for each driver. */
+    def withDriverCores(n: Int): Defaults =
+      withProperty("spark.driver.cores" -> n.toString)
+
+    /** Set the memory overhead for each driver. */
+    def withDriverMemoryOverhead(mem: MemorySize): Defaults =
+      withProperty("spark.driver.memoryOverhead" -> mem.toString)
+  }
+
+  /** ApplicationConfig for spark-env. */
+  final case class Env(
+    override val classificationProperties: Seq[ClassificationProperties] = Seq.empty,
+    override val properties: Seq[(String, String)] = Seq.empty,
+  ) extends ApplicationConfig[Env] {
+    override val classification: String = "spark-env"
+
+    /** Classification properties for exporting environment variables to use python 3. */
+    def withPython3: Env = {
+      val export = ClassificationProperties("export")
+        .withProperty("PYSPARK_PYTHON" -> "/usr/bin/python3")
+
+      withClassificationProperties(export)
     }
   }
 }

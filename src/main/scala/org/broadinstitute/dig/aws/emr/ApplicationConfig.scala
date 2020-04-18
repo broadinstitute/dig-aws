@@ -7,39 +7,37 @@ import scala.collection.JavaConverters._
   *
   * See: https://docs.aws.amazon.com/emr/latest/ReleaseGuide/emr-configure-apps.html
   */
-case class ApplicationConfig(
-    classification: String,
-    classifiedProperties: Seq[ClassificationProperties] = Seq.empty,
-    properties: Seq[ApplicationConfig.Property] = Seq.empty,
-) {
+trait ApplicationConfig[U <: ApplicationConfig[U]] {
+  self: {
+    def copy(classificationProperties: Seq[ClassificationProperties], properties: Seq[(String, String)]): U
+  } =>
+  val classification: String
+  val classificationProperties: Seq[ClassificationProperties] = Seq.empty
+  val properties: Seq[(String, String)] = Seq.empty
+
+  /** Add classification properties to the configuration. */
+  def withClassificationProperties(classifiedProperties: ClassificationProperties): U =
+    copy(classificationProperties :+ classifiedProperties, properties)
+
+  /** Add stand-alone properties to the configuration. */
+  def withProperty(property: (String, String)): U =
+    copy(classificationProperties, properties :+ property)
+
   /** Create the EMR Configuration for this application configuration. */
   def configuration: Configuration =
     Configuration.builder
       .classification(classification)
-      .configurations(classifiedProperties.map(_.configuration).asJava)
+      .configurations(classificationProperties.map(_.configuration).asJava)
       .properties(properties.toMap.asJava)
       .build
-
-  /** Create a new ApplicationConfig with additional configuration properties. */
-  def withClassifiedProperties(newClassification: ClassificationProperties): ApplicationConfig = {
-    copy(classifiedProperties = classifiedProperties :+ newClassification)
-  }
-
-  /** Create a new ApplicationConfig with the specific property added. */
-  def withProperty(property: ApplicationConfig.Property): ApplicationConfig = {
-    copy(properties = properties :+ property)
-  }
-}
-
-/** Companion object and helper types.
-  */
-object ApplicationConfig {
-  type Property = (String, String)
 }
 
 /** Each application has multiple configurations that it can export.
   */
-final case class ClassificationProperties(classification: String, properties: ApplicationConfig.Property*) {
+final case class ClassificationProperties(classification: String, properties: Seq[(String, String)] = Seq.empty) {
+  /** Add a stand-alone property to the configuration. */
+  def withProperty(property: (String, String)): ClassificationProperties =
+    copy(properties = properties :+ property)
 
   /** Create the EMR Configuration for this application. */
   def configuration: Configuration =
@@ -47,9 +45,4 @@ final case class ClassificationProperties(classification: String, properties: Ap
       .classification(classification)
       .properties(properties.toMap.asJava)
       .build
-
-  /** Create a new classification with additional properties. */
-  def withProperty(property: ApplicationConfig.Property): ClassificationProperties = {
-    ClassificationProperties(classification, properties.toSeq :+ property: _*)
-  }
 }
