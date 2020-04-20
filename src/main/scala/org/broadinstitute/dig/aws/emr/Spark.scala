@@ -67,4 +67,30 @@ object Spark {
       withClassificationProperties(export)
     }
   }
+
+  /** Hadoop MapReduce configuration. */
+  final case class MapReduce(
+     override val classificationProperties: Seq[ClassificationProperties] = Seq.empty,
+     override val properties: Seq[(String, String)] = Seq.empty,
+   ) extends ApplicationConfig[MapReduce] {
+    override val classification: String = "mapred-site"
+
+    /** Set the amount of memory allocated for map jobs. */
+    def withMapMemory(mem: MemorySize): MapReduce = {
+      val jvmMB = MemorySize(mem.toMB.size * 80 / 100, MB)
+
+      this
+        .withProperty("mapreduce.map.java.opts" -> s"-Xmx${jvmMB.toString}")
+        .withProperty("mapreduce.map.memory.mb" -> mem.toMB.size.toString)
+    }
+
+    /** Set the amount of memory allocated for reduce jobs. */
+    def withReduceMemory(mem: MemorySize): MapReduce = {
+      val jvmMB = MemorySize(mem.toMB.size * 80 / 100, MB)
+
+      this
+        .withProperty("mapreduce.reduce.java.opts" -> s"-Xmx${jvmMB.toString}")
+        .withProperty("mapreduce.reduce.memory.mb" -> mem.toMB.size.toString)
+    }
+  }
 }
