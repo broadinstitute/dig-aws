@@ -136,8 +136,14 @@ object Implicits {
     /** True if this step failed. */
     def isFailure: Boolean = state == StepState.FAILED
 
+    /** True if the step was cancelled. */
+    def isCanceled: Boolean = state == StepState.CANCELLED
+
     /** True if the step hasn't started yet. */
     def isPending: Boolean = state == StepState.PENDING
+
+    /** True if the step is actively running. */
+    def isRunning: Boolean = state == StepState.RUNNING
 
     /** If failed, this is the reason why. */
     def failureReason: Option[String] = {

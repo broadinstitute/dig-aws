@@ -20,7 +20,7 @@ final case class Cluster(
     masterVolumeSizeInGB: Int = 32,
     slaveVolumeSizeInGB: Int = 32,
     applications: Seq[ApplicationName] = Cluster.defaultApplications,
-    configurations: Seq[ApplicationConfig] = Cluster.defaultConfigurations,
+    configurations: Seq[ApplicationConfig[_]] = Seq.empty,
     bootstrapScripts: Seq[BootstrapScript] = Seq.empty,
     bootstrapSteps: Seq[JobStep] = Seq.empty,
     keepAliveWhenNoSteps: Boolean = false,
@@ -83,7 +83,4 @@ object Cluster {
     ApplicationName.pig,
     ApplicationName.hue
   )
-
-  /** The default configurations for applications. */
-  val defaultConfigurations: Seq[ApplicationConfig] = Seq()
 }

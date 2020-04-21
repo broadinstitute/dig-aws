@@ -1,5 +1,5 @@
 lazy val Versions = new {
-  val Aws              = "2.7.33"
+  val Aws              = "2.11.12"
   val Cats             = "1.5.0"
   val CatsEffect       = "1.1.0"
   val Janino           = "3.0.8"
