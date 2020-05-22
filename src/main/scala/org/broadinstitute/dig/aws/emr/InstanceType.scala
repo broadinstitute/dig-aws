@@ -16,24 +16,24 @@ final case class InstanceType(Label: String) {
 object InstanceType {
 
   /** General-purpose, balanced. */
-  val m5_2xlarge  = InstanceType("m5.2xlarge")
-  val m5_4xlarge  = InstanceType("m5.4xlarge")
-  val m5_8xlarge  = InstanceType("m5.8xlarge")
-  val m5_12xlarge = InstanceType("m5.12xlarge")
-  val m5_16xlarge = InstanceType("m5.16xlarge")
-  val m5_24xlarge = InstanceType("m5.24xlarge")
+  val m5_2xlarge: InstanceType = InstanceType("m5.2xlarge")
+  val m5_4xlarge: InstanceType = InstanceType("m5.4xlarge")
+  val m5_8xlarge: InstanceType = InstanceType("m5.8xlarge")
+  val m5_12xlarge: InstanceType = InstanceType("m5.12xlarge")
+  val m5_16xlarge: InstanceType = InstanceType("m5.16xlarge")
+  val m5_24xlarge: InstanceType = InstanceType("m5.24xlarge")
 
   /** Memory-optimized. */
-  val r5_2xlarge  = InstanceType("r5.2xlarge")
-  val r5_4xlarge  = InstanceType("r5.4xlarge")
-  val r5_8xlarge = InstanceType("r5.8xlarge")
-  val r5_12xlarge = InstanceType("r5.12xlarge")
+  val r5_2xlarge: InstanceType = InstanceType("r5.2xlarge")
+  val r5_4xlarge: InstanceType = InstanceType("r5.4xlarge")
+  val r5_8xlarge: InstanceType = InstanceType("r5.8xlarge")
+  val r5_12xlarge: InstanceType = InstanceType("r5.12xlarge")
 
   /** Compute-optimized. */
-  val c5_2xlarge  = InstanceType("c5.2xlarge")
-  val c5_4xlarge  = InstanceType("c5.4xlarge")
-  val c5_9xlarge  = InstanceType("c5.9xlarge")
-  val c5_18xlarge = InstanceType("c5.18xlarge")
+  val c5_2xlarge: InstanceType = InstanceType("c5.2xlarge")
+  val c5_4xlarge: InstanceType = InstanceType("c5.4xlarge")
+  val c5_9xlarge: InstanceType = InstanceType("c5.9xlarge")
+  val c5_18xlarge: InstanceType = InstanceType("c5.18xlarge")
 
   /** Convert a JSON value to an InstanceType. */
   val deserialize: PartialFunction[JValue, InstanceType] = {

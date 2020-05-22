@@ -11,7 +11,7 @@ import software.amazon.awssdk.services.emr.model.VolumeSpecification
 /** Parameterized configuration for an EMR cluster. Constant settings are
   * located in `config.emr.EmrConfig` and are loaded in the JSON.
   */
-final case class Cluster(
+final case class ClusterDef(
     name: String,
     amiId: Option[AmiId] = None, //AmiId.amazonLinux_2018_3,
     instances: Int = 3,
@@ -24,7 +24,7 @@ final case class Cluster(
     bootstrapScripts: Seq[BootstrapScript] = Seq.empty,
     bootstrapSteps: Seq[JobStep] = Seq.empty,
     keepAliveWhenNoSteps: Boolean = false,
-    visibleToAllUsers: Boolean = true
+    visibleToAllUsers: Boolean = true,
 ) {
   require(name.matches("[A-Za-z_]+[A-Za-z0-9_]*"), s"Illegal cluster name: $name")
   require(instances >= 1)

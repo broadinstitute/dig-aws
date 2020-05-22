@@ -7,15 +7,10 @@ import java.nio.file.Paths
 import java.time.Instant
 
 import scala.io.Source
-
-import org.broadinstitute.dig.aws.config.AWSConfig
-import org.broadinstitute.dig.aws.config.emr.EmrConfig
+import org.broadinstitute.dig.aws.config.{AwsConfig, EmrConfig}
 import org.json4s.DefaultFormats
 import org.json4s.Formats
 import org.json4s.jackson.Serialization.read
-
-import cats.effect.IO
-import cats.implicits._
 
 
 /**
@@ -33,7 +28,7 @@ final class AwsTest extends AwsFunSuite {
     implicit val formats: Formats = DefaultFormats ++ EmrConfig.customSerializers
 
     /** Load the settings file and parse it. */
-    val awsConfig = read[AWSConfig](configFileContents)
+    val awsConfig = read[AwsConfig](configFileContents)
     
     new AWS(awsConfig)
   }

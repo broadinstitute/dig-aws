@@ -1,7 +1,7 @@
 package org.broadinstitute.dig.aws.emr
 
 import software.amazon.awssdk.services.emr.model.Configuration
-import scala.collection.JavaConverters._
+import scala.jdk.CollectionConverters._
 
 /** Each application can have various configuration settings assigned to it.
   *

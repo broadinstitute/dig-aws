@@ -26,7 +26,7 @@ object RoleId {
   }
 
   /** Custom serializer for RoleId. To use this, add it to the default
-    * formats when deserializing...
+    * formats when de-serializing...
     *
     * implicit val formats = json4s.DefaultFormats + RoleId.Serializer
     */

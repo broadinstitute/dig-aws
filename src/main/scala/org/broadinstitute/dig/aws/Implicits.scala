@@ -3,40 +3,26 @@ package org.broadinstitute.dig.aws
 import java.net.URI
 import java.nio.file.Paths
 
-import scala.collection.JavaConverters._
-import scala.collection.mutable.ArrayBuffer
-import scala.collection.mutable.Buffer
-import scala.concurrent.ExecutionContext
+import scala.jdk.CollectionConverters._
 import scala.io.Source
 import scala.util.Try
-
-import cats.effect.ContextShift
-import cats.effect.IO
-import cats.effect.Timer
 import software.amazon.awssdk.core.ResponseInputStream
 import software.amazon.awssdk.services.emr.model.StepState
 import software.amazon.awssdk.services.emr.model.StepSummary
 import software.amazon.awssdk.services.s3.S3Client
-import software.amazon.awssdk.services.s3.model.GetObjectRequest
-import software.amazon.awssdk.services.s3.model.ListObjectsV2Request
-import software.amazon.awssdk.services.s3.model.ListObjectsV2Response
+import software.amazon.awssdk.services.s3.model.{GetObjectRequest, ListObjectsV2Request, ListObjectsV2Response, S3Object}
 import software.amazon.awssdk.services.s3.paginators.ListObjectsV2Iterable
 
+import scala.collection.mutable
+
 object Implicits {
-
-  object Defaults {
-    /** Needed for IO.sleep. */
-    implicit val timer: Timer[IO] = IO.timer(ExecutionContext.global)
-
-    /** Needed for IO.parSequence. */
-    implicit val contextShift: ContextShift[IO] = IO.contextShift(ExecutionContext.global)
-  }
 
   /** Helper functions for S3 objects. */
   final implicit class RichResponseInputStream[A](val responseInputStream: ResponseInputStream[A]) extends AnyVal {
 
-    /** Read the entire contents of an S3 object as a string, sonsuming the ResponseInputStream 
-     *  and disposing of it afterward. */ 
+    /** Read the entire contents of an S3 object as a string, consuming the ResponseInputStream
+      * and disposing of it afterward.
+      */
     def readAsString(): String = {
       try {
         Source.fromInputStream(responseInputStream).mkString
@@ -44,6 +30,15 @@ object Implicits {
         responseInputStream.close()
       }
     }
+  }
+
+  /** Helper functions for S3 objects. */
+  final implicit class RichS3Object(val obj: S3Object) extends AnyVal {
+
+    /** S3Object has quoted E-Tags for some stupid reason... */
+    def eTagStripped: String = obj.eTag.replaceAll("^\"|\"$", "")
+
+    def eTag: String = eTagStripped
   }
 
   /** Helper functions for common S3 operations that are a little tricky. */
@@ -74,23 +69,28 @@ object Implicits {
       s3.listObjectsV2Paginator(request)
     }
 
-    /** Collect all the keys (recursively) into a collection. */
-    def listKeys(bucket: String, key: String, recursive: Boolean = true): Seq[String] = {
+    /** Collect all the objects (recursively) into a collection. */
+    def listObjects(bucket: String, key: String, recursive: Boolean = true): Seq[S3Object] = {
       val responses = listingsIterable(bucket, key).iterator.asScala
-      val keys: Buffer[String] = new ArrayBuffer
+      var objects = Vector.empty[S3Object]
 
       // find all the keys in each object listing
       for (response <- responses) {
-        keys ++= response.keys
+        objects ++= response.objects
 
         if (recursive) {
           for (commonPrefix <- response.commonPrefixNames) {
-            keys ++= listKeys(bucket, commonPrefix, recursive)
+            objects ++= listObjects(bucket, commonPrefix, recursive)
           }
         }
       }
 
-      keys.toSeq
+      objects
+    }
+
+    /** Collect all the keys (recursively) into a collection. */
+    def listKeys(bucket: String, key: String, recursive: Boolean = true): Seq[String] = {
+      listObjects(bucket, key, recursive).map(_.key)
     }
   }
 
@@ -99,19 +99,21 @@ object Implicits {
 
     //TODO: Is this how to tell if the listing is empty?
     def isEmpty: Boolean = listing.contents.isEmpty && listing.commonPrefixes.isEmpty
-    
-    /** Extract all the object keys from an object listing iterator. */
-    def keys: Seq[String] = listing.contents.iterator.asScala.map(_.key).toList
+
+    /** Get an vector of all the s3 objects for this listing. */
+    def objects: Vector[S3Object] = listing.contents.asScala.toVector
+
+    /** Get an vector of all the s3 keys in this listing. */
+    def keys: Vector[String] = objects.map(_.key)
 
     /** Extract all the common prefixes. */
-    def commonPrefixNames: Seq[String] = listing.commonPrefixes.iterator.asScala.map(_.prefix).toList
+    def commonPrefixNames: Seq[String] = listing.commonPrefixes.asScala.map(_.prefix).toList
   }
 
-  /**
-   * When dealing with S3 paths, it's often helpful to be able to get
-   * just the final filename from a path.
-   * Will return the empty string if the URI doesn't have a path part, or if the path part is empty.
-   */
+  /** When dealing with S3 paths, it's often helpful to be able to get
+    * just the final filename from a path.
+    * Will return the empty string if the URI doesn't have a path part, or if the path part is empty.
+    */
   final implicit class RichURI(val uri: URI) extends AnyVal {
     def basename: String = {
       val path = Paths.get(uri.getPath)

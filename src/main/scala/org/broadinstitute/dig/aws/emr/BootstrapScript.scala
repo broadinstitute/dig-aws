@@ -15,7 +15,7 @@ import org.broadinstitute.dig.aws.Implicits
 class BootstrapScript(uri: URI) {
   import Implicits.RichURI
 
-  /** Create a simple action configuration for this boostrap action. */
+  /** Create a simple action configuration for this bootstrap action. */
   protected def action: ScriptBootstrapActionConfig = {
     ScriptBootstrapActionConfig.builder.path(uri.toString).build
   }

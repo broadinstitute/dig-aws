@@ -1,22 +1,19 @@
 package org.broadinstitute.dig.aws
 
-import org.broadinstitute.dig.aws.config.AWSConfig
-import org.broadinstitute.dig.aws.config.S3Config
-import org.broadinstitute.dig.aws.config.emr.EmrConfig
+import org.broadinstitute.dig.aws.config.{AwsConfig, EmrConfig, S3Config}
 import org.broadinstitute.dig.aws.config.emr.ReleaseLabel
 import org.broadinstitute.dig.aws.config.emr.RoleId
 import org.broadinstitute.dig.aws.config.emr.SecurityGroupId
 import org.broadinstitute.dig.aws.config.emr.SubnetId
 import org.scalatest.FunSuite
-
 import com.typesafe.config.ConfigFactory
 
 /**
  * @author clint
  * Sep 17, 2019
  */
-final class AWSConfigTest extends FunSuite {
-  import org.broadinstitute.dig.aws.config.AWSConfig.fromTypesafeConfig
+final class AwsConfigTest extends FunSuite {
+  import org.broadinstitute.dig.aws.config.AwsConfig.fromTypesafeConfig
   
   test("fromTypesafeConfig - bad input") {
     assert(fromTypesafeConfig(ConfigFactory.empty(), "foo").isFailure)
@@ -58,7 +55,7 @@ final class AWSConfigTest extends FunSuite {
     
     val expected = AWSConfig(
         s3 = S3Config(bucket),
-        emr = EmrConfig(
+        emr = config.EmrConfig(
             sshKeyName = sshKeyName,
             subnetId = SubnetId(subnetId),
             releaseLabel = ReleaseLabel(releaseLabel),
@@ -99,7 +96,7 @@ final class AWSConfigTest extends FunSuite {
     
     val expected = AWSConfig(
         s3 = S3Config(bucket),
-        emr = EmrConfig(
+        emr = config.EmrConfig(
             sshKeyName = sshKeyName,
             subnetId = SubnetId(subnetId),
             releaseLabel = ReleaseLabel.emrLatest,

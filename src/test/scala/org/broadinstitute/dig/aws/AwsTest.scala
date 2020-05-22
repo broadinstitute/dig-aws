@@ -7,7 +7,7 @@ import java.net.URI
  * @author clint
  * Oct 29, 2019
  */
-final class AWSTest extends FunSuite {
+final class AwsTest extends FunSuite {
   test("keyOf") {
     val uri = URI.create("s3://some-bucket/foo/bar/baz")
     
