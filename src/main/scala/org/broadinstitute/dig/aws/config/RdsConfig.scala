@@ -30,11 +30,5 @@ object RdsConfig {
 
     /** The connection string for the default schema. */
     def connectionString: String = connectionString(dbname)
-
-    /** Driver to use for the connection, by default assume MySQL. */
-    lazy val driver: String = engine match {
-      case "mysql" => "com.mysql.cj.jdbc.Driver"
-      case _       => throw new IllegalArgumentException(s"Unhandled DB engine: $engine")
-    }
   }
 }

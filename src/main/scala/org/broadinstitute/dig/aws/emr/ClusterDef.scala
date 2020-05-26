@@ -19,7 +19,7 @@ final case class ClusterDef(
     slaveInstanceType: InstanceType = InstanceType.m5_2xlarge,
     masterVolumeSizeInGB: Int = 32,
     slaveVolumeSizeInGB: Int = 32,
-    applications: Seq[ApplicationName] = Cluster.defaultApplications,
+    applications: Seq[ApplicationName] = ClusterDef.defaultApplications,
     configurations: Seq[ApplicationConfig[_]] = Seq.empty,
     bootstrapScripts: Seq[BootstrapScript] = Seq.empty,
     bootstrapSteps: Seq[JobStep] = Seq.empty,
@@ -73,7 +73,7 @@ final case class ClusterDef(
 }
 
 /** Companion object for creating an EMR cluster. */
-object Cluster {
+object ClusterDef {
 
   /** The default set used by pretty much every cluster. */
   val defaultApplications: Seq[ApplicationName] = Seq(

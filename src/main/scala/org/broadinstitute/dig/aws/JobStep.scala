@@ -28,12 +28,12 @@ object JobStep {
 
   /** Create a shell string for setting environment variables. */
   private def environ(env: Seq[(String, String)]): String = {
-    env.map { case (key, value) => s"""$key="$value"""" }.mkString(" ")
+    env.map { case (key, value) => s"$key='$value'" }.mkString(" ")
   }
 
   /** Use `/bash/sh -c` to construct a command with environment variables set. */
   private def stepCmdLine(args: Seq[String], env: Seq[(String, String)]): List[String] = {
-    List("/bin/sh", "-c", s"${environ(env)} ${args.mkString(" ")}")
+    List("/bin/bash", "-c", s"${environ(env)} ${args.mkString(" ")}")
   }
 
   /** Create a new Map Reduce step given a JAR (S3 path) the main class to
@@ -94,18 +94,11 @@ object JobStep {
 
   /** Create a Command Runner step that will run a Python3 spark script.
     */
-  final case class PySpark(script: URI, args: String*) extends JobStep {
-    override def config: StepConfig = {
-      val commandRunnerArgs = List(
-        "spark-submit",
-        "--deploy-mode",
-        "cluster",
-        script.toString
-      )
+  def PySpark(script: URI, args: String*): CommandRunner = {
+    val commandRunnerArgs = Seq("spark-submit", "--deploy-mode", "cluster", script.toString)
 
-      // use the basename of the file as the name of the step
-      CommandRunner(toJobName(script), commandRunnerArgs ++ args).config
-    }
+    // create a command runner
+    CommandRunner(toJobName(script), commandRunnerArgs ++ args)
   }
 
   /** Create a Command Runner step that will run a Pig script.
@@ -113,22 +106,16 @@ object JobStep {
     * Pig script parameters are passed in with `-p key=value` for each and
     * every argument, and the script is finally passed with `-f file`.
     */
-  final case class Pig(script: URI, args: (String, String)*) extends JobStep {
-    override def config: StepConfig = {
-      val commandRunnerArgs = List(
-        "pig-script",
-        "--run-pig-script",
-        "--args"
-      )
+  def Pig(script: URI, args: (String, String)*): CommandRunner = {
+    val commandRunnerArgs = Seq("pig-script", "--run-pig-script", "--args")
 
-      // intersperse -p with key=value parameters
-      val params = args.map { case (k, v) => s"$k=$v" }.flatMap(List("-p", _))
+    // intersperse -p with key=value parameters
+    val params = args.map { case (k, v) => s"$k=$v" }.flatMap(List("-p", _))
 
-      // prepend the script location with the file flag
-      val file = List("-f", script.toString)
+    // prepend the script location with the file flag
+    val file = List("-f", script.toString)
 
-      // use the basename of the script location as the name of the step
-      CommandRunner(toJobName(script), commandRunnerArgs ++ params ++ file).config
-    }
+    // create the command runner
+    CommandRunner(toJobName(script), commandRunnerArgs ++ params ++ file)
   }
 }

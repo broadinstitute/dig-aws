@@ -19,7 +19,7 @@ import org.json4s.jackson.Serialization.read
   */
 final class AwsTest extends AwsFunSuite {
   
-  override protected val aws: AWS = {
+  override protected val aws: Aws = {
     //Config file needs to be in place before this test will work.
     val configFile = new File("src/it/resources/config.json")
     
@@ -30,7 +30,7 @@ final class AwsTest extends AwsFunSuite {
     /** Load the settings file and parse it. */
     val awsConfig = read[AwsConfig](configFileContents)
     
-    new AWS(awsConfig)
+    new Aws(awsConfig)
   }
   
   testWithPseudoDirIO("ETagLastModified") {

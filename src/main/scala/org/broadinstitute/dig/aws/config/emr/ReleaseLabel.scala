@@ -13,7 +13,7 @@ final case class ReleaseLabel(value: String) {
 object ReleaseLabel {
 
   /** Default EMR instance release version. */
-  val emrLatest: ReleaseLabel = ReleaseLabel("emr-6.0.0")
+  val emrLatest: ReleaseLabel = ReleaseLabel("emr-5.30.0")
 
   /** Convert a JSON value to an ReleaseLabel. */
   val deserialize: PartialFunction[JValue, ReleaseLabel] = {

@@ -12,7 +12,7 @@ import cats.effect.IO
  * Jul 27, 2018
  */
 trait AwsFunSuite extends FunSuite {
-  protected def aws: AWS
+  protected def aws: Aws
 
   def testWithPseudoDir(name: String)(body: String => Any): Unit = {
     test(name) {
