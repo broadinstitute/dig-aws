@@ -19,14 +19,11 @@ object S3 extends LazyLogging {
   val client: S3Client = S3Client.builder.build
 
   /** Methods for interacting with a specific bucket. */
-  final class Bucket(bucket: String) {
+  final class Bucket(val bucket: String) {
 
     /** Returns the S3 URI of a given key. */
     def s3UriOf(key: String): URI = {
-      val req = GetUrlRequest.builder.bucket(bucket).key(key).build
-      val url = client.utilities().getUrl(req)
-
-      url.toURI
+      new URI(s"s3://$bucket/$key")
     }
 
     /** Returns the public URI of a given key. */
@@ -65,7 +62,10 @@ object S3 extends LazyLogging {
 
     /** Upload a string to the bucket. */
     def put(key: String, content: String): PutObjectResponse = {
-      client.putObject(PutObjectRequest.builder.bucket(bucket).key(key).build, RequestBody.fromString(content))
+      val fixed = content.replace("\r\n", "\n")
+      val request = RequestBody.fromString(fixed)
+
+      client.putObject(PutObjectRequest.builder.bucket(bucket).key(key).build, request)
     }
 
     /** Upload a file to the bucket. */
@@ -75,9 +75,7 @@ object S3 extends LazyLogging {
 
     /** Upload a resource to the bucket. */
     def putResource(key: String, resource: String): PutObjectResponse = {
-      val contents = Source.fromResource(resource).mkString.replace("\r\n", "\n")
-
-      put(key, contents)
+      put(key, Source.fromResource(resource).mkString)
     }
 
     /** Download the contents of a key to a file. */

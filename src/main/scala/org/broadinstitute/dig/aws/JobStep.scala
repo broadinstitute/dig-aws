@@ -8,10 +8,6 @@ import scala.jdk.CollectionConverters._
 
 /** All Hadoop jobs are a series of steps. */
 sealed abstract class JobStep {
-  protected var env = Seq.empty[(String, String)]
-
-  /** Add a single environment variable binding to this step. */
-  def setEnv(key: String, value: String): Unit = env +:= key -> value
 
   /** Construct the EMR configuration for this step. */
   def config: StepConfig
@@ -31,11 +27,6 @@ object JobStep {
     env.map { case (key, value) => s"$key='$value'" }.mkString(" ")
   }
 
-  /** Use `/bash/sh -c` to construct a command with environment variables set. */
-  private def stepCmdLine(args: Seq[String], env: Seq[(String, String)]): List[String] = {
-    List("/bin/bash", "-c", s"${environ(env)} ${args.mkString(" ")}")
-  }
-
   /** Create a new Map Reduce step given a JAR (S3 path) the main class to
     * run, and any command line arguments to pass along to the JAR.
     */
@@ -44,7 +35,7 @@ object JobStep {
       val jarConfig = HadoopJarStepConfig.builder
         .jar(jar.toString)
         .mainClass(mainClass)
-        .args(stepCmdLine(args, env).asJava)
+        .args(args.asJava)
         .build
 
       StepConfig.builder
@@ -63,7 +54,7 @@ object JobStep {
     override def config: StepConfig = {
       val jarConfig = HadoopJarStepConfig.builder
         .jar("command-runner.jar")
-        .args(stepCmdLine(args, env).asJava)
+        .args(args.asJava)
         .build
 
       StepConfig.builder
@@ -81,7 +72,7 @@ object JobStep {
     override def config: StepConfig = {
       val jarConfig = HadoopJarStepConfig.builder
         .jar("s3://us-east-1.elasticmapreduce/libs/script-runner/script-runner.jar")
-        .args(stepCmdLine(script.toString :: args.toList, env).asJava)
+        .args((script.toString :: args.toList).asJava)
         .build
 
       StepConfig.builder

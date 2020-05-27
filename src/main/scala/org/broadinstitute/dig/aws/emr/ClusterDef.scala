@@ -1,7 +1,7 @@
 package org.broadinstitute.dig.aws.emr
 
 import org.broadinstitute.dig.aws.JobStep
-
+import org.broadinstitute.dig.aws.emr.configurations.Configuration
 import software.amazon.awssdk.services.emr.model.EbsBlockDeviceConfig
 import software.amazon.awssdk.services.emr.model.EbsConfiguration
 import software.amazon.awssdk.services.emr.model.InstanceGroupConfig
@@ -20,7 +20,7 @@ final case class ClusterDef(
     masterVolumeSizeInGB: Int = 32,
     slaveVolumeSizeInGB: Int = 32,
     applications: Seq[ApplicationName] = ClusterDef.defaultApplications,
-    configurations: Seq[ApplicationConfig[_]] = Seq.empty,
+    applicationConfigurations: Seq[Configuration] = Seq.empty,
     bootstrapScripts: Seq[BootstrapScript] = Seq.empty,
     bootstrapSteps: Seq[JobStep] = Seq.empty,
     keepAliveWhenNoSteps: Boolean = false,
@@ -30,7 +30,7 @@ final case class ClusterDef(
   require(instances >= 1)
 
   /** Instance configuration for the master node. */
-  val masterInstanceGroupConfig: InstanceGroupConfig = {
+  lazy val masterInstanceGroupConfig: InstanceGroupConfig = {
     val volumeSpec = VolumeSpecification.builder
       .sizeInGB(masterVolumeSizeInGB)
       .volumeType("gp2")
@@ -48,7 +48,7 @@ final case class ClusterDef(
   }
 
   /** Instance configuration for the slave nodes. */
-  val slaveInstanceGroupConfig: InstanceGroupConfig = {
+  lazy val slaveInstanceGroupConfig: InstanceGroupConfig = {
     val volumeSpec = VolumeSpecification.builder
       .sizeInGB(slaveVolumeSizeInGB)
       .volumeType("gp2")
@@ -66,7 +66,7 @@ final case class ClusterDef(
   }
 
   /** Sequence of all instance groups used to create this cluster. */
-  val instanceGroups: Seq[InstanceGroupConfig] = {
+  lazy val instanceGroups: Seq[InstanceGroupConfig] = {
     Seq(masterInstanceGroupConfig, slaveInstanceGroupConfig)
       .filter(_.instanceCount > 0)
   }
