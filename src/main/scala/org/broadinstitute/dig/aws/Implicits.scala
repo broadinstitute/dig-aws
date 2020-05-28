@@ -25,12 +25,12 @@ object Implicits {
   final implicit class RichS3Object(val obj: S3Object) extends AnyVal {
 
     /** S3Object has quoted E-Tags due to historical (but wrong) reasons... */
-    def eTag: String = {
-      val first = obj.eTag.indexOf('"')
+    def version: String = {
+      val start = if (obj.eTag.headOption.contains('"')) 1 else 0
 
-      obj.eTag.lastIndexOf('"') match {
-        case n if n < 0 => obj.eTag.substring(first + 1)
-        case n          => obj.eTag.substring(first + 1, n)
+      obj.eTag.lastOption match {
+        case Some('"') => obj.eTag.substring(start, obj.eTag.length - start)
+        case _         => obj.eTag.substring(start)
       }
     }
   }
