@@ -3,7 +3,7 @@ package org.broadinstitute.dig.aws
 import com.typesafe.scalalogging.LazyLogging
 import org.broadinstitute.dig.aws.config.EmrConfig
 import org.broadinstitute.dig.aws.emr.ClusterDef
-import org.broadinstitute.dig.aws.emr.configurations.Yarn
+import org.broadinstitute.dig.aws.emr.configurations.Configuration
 
 import scala.concurrent.duration._
 import scala.jdk.CollectionConverters._
@@ -24,10 +24,19 @@ object Emr extends LazyLogging {
     /** Create a new cluster with some initial job steps and return the job
       * flow response, which can be used to add additional steps later.
       */
-    def createCluster(cluster: ClusterDef, steps: Seq[JobStep]): RunJobFlowResponse = {
+    def createCluster(cluster: ClusterDef, env: Map[String, String], steps: Seq[JobStep]): RunJobFlowResponse = {
       val bootstrapConfigs = cluster.bootstrapScripts.map(_.config)
       val allSteps = cluster.bootstrapSteps ++ steps
       val logUri = s"s3://$logBucket/logs/${cluster.name}"
+      var configurations = cluster.applicationConfigurations
+
+      // add environment variables both yarn (for PySpark) and hadoop (for Scripts)
+      for (export <- Seq("yarn-env", "hadoop-env")) {
+        configurations.find(_.classification == export) match {
+          case Some(config) => config.export(env)
+          case _            => configurations :+= new Configuration(export).export(env)
+        }
+      }
 
       // create all the instances
       val instances = JobFlowInstancesConfig.builder
@@ -45,7 +54,7 @@ object Emr extends LazyLogging {
         .name(cluster.name)
         .bootstrapActions(bootstrapConfigs.asJava)
         .applications(cluster.applications.map(_.application).asJava)
-        .configurations(cluster.applicationConfigurations.map(_.build).asJava)
+        .configurations(configurations.map(_.build).asJava)
         .releaseLabel(config.releaseLabel.value)
         .serviceRole(config.serviceRoleId.value)
         .jobFlowRole(config.jobFlowRoleId.value)
@@ -110,7 +119,7 @@ object Emr extends LazyLogging {
       * that need to run (in any order!). As a cluster becomes available
       * steps from the various jobs will be sent to it for running.
       */
-    def runJobs(cluster: ClusterDef, jobs: Seq[Seq[JobStep]], maxParallel: Int = 5): Unit = {
+    def runJobs(cluster: ClusterDef, env: Map[String, String], jobs: Seq[Seq[JobStep]], maxParallel: Int = 5): Unit = {
       val jobList = Random.shuffle(jobs).toList
       val totalSteps = jobList.flatten.size
 
@@ -122,7 +131,7 @@ object Emr extends LazyLogging {
       val pendingStepsPerJobFlow = 2
 
       // create a cluster for each initial, parallel job
-      val clusters = initialJobs.map(job => createCluster(cluster, job))
+      val clusters = initialJobs.map(job => createCluster(cluster, env, job))
 
       // queue of the remaining jobs and count of completed steps
       var stepQueue = remainingJobs.flatten
@@ -176,8 +185,8 @@ object Emr extends LazyLogging {
 
     /** Helper: create a single job.
       */
-    def runJob(cluster: ClusterDef, steps: JobStep*): Unit = {
-      runJobs(cluster, Seq(steps))
+    def runJob(cluster: ClusterDef, env: Map[String, String], steps: JobStep*): Unit = {
+      runJobs(cluster, env, Seq(steps))
     }
   }
 }

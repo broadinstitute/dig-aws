@@ -44,12 +44,23 @@ class Configuration(val classification: String) {
   }
 
   /** Add or update an existing child configuration. */
-  def withConfiguration[U <: Configuration](default: U)(f: U => U): this.type = {
-    configurations.updateWith(default.classification) {
-      _.map(_.asInstanceOf[U]).orElse(Some(default)).map(f)
+  def withConfiguration(classification: String)(f: Configuration => Configuration): this.type = {
+    configurations.updateWith(classification) {
+      case Some(config) => Some(f(config))
+      case None         => Some(f(new Configuration(classification)))
     }
 
     this
+  }
+
+  /** Add a single property to the export child configuration. */
+  def export(property: (String, String)): this.type = {
+    withConfiguration("export")(_.addProperty(property))
+  }
+
+  /** Add a multiple properties to the export child configuration. */
+  def export(env: Map[String, String]): this.type = {
+    withConfiguration("export")(_.addProperties(env))
   }
 
   /** Build the EMR configuration object. */

@@ -53,7 +53,7 @@ object Spark {
   }
 
   /** Classification for spark-env. */
-  class Env extends Configuration("spark-env") with Export[Env] {
+  class Env extends Configuration("spark-env") {
 
     /** Classification properties for exporting environment variables to use python 3. */
     def usePython3(): this.type = {
