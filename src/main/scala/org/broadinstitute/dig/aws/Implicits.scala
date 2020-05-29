@@ -15,7 +15,7 @@ object Implicits {
     /** Final "filename" of the resource. */
     def basename: String = {
       val path = uri.getPath
-      val lastSep = path.indexOf('/')
+      val lastSep = path.lastIndexOf('/')
 
       path.substring(lastSep + 1)
     }

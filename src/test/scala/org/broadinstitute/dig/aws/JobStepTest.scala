@@ -2,14 +2,11 @@ package org.broadinstitute.dig.aws
 
 import org.scalatest.FunSuite
 import java.net.URI
+import scala.jdk.CollectionConverters._
 import software.amazon.awssdk.services.emr.model.StepConfig
 import software.amazon.awssdk.services.emr.model.ActionOnFailure
 import software.amazon.awssdk.services.emr.model.HadoopJarStepConfig
 
-/**
- * @author clint
- * Aug 27, 2018
- */
 final class JobStepTest extends FunSuite {
   import JobStep.toJobName
 
@@ -34,8 +31,6 @@ final class JobStepTest extends FunSuite {
   }
 
   test("Script.config") {
-    import scala.collection.JavaConverters._
-
     val uri = new URI("http://example.com/foo/bar/baz/blerg")
 
     val config = JobStep.Script(uri, "foo", "bar", "baz").config
@@ -54,8 +49,6 @@ final class JobStepTest extends FunSuite {
   }
 
   test("PySpark.config") {
-    import scala.collection.JavaConverters._
-
     val uri = new URI("http://example.com/foo/bar/baz/blerg")
 
     val config = JobStep.PySpark(uri, "foo", "bar", "baz").config
@@ -74,8 +67,6 @@ final class JobStepTest extends FunSuite {
   }
 
   test("Pig.config") {
-    import scala.collection.JavaConverters._
-
     val uri = new URI("http://example.com/foo/bar/baz/blerg")
 
     val config = JobStep.Pig(uri, "foo" -> "x", "bar" -> "y", "baz" -> "z").config

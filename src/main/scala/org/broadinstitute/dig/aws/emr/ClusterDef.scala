@@ -1,7 +1,9 @@
 package org.broadinstitute.dig.aws.emr
 
 import org.broadinstitute.dig.aws.JobStep
+import org.broadinstitute.dig.aws.ec2.InstanceType
 import org.broadinstitute.dig.aws.emr.configurations.Configuration
+
 import software.amazon.awssdk.services.emr.model.EbsBlockDeviceConfig
 import software.amazon.awssdk.services.emr.model.EbsConfiguration
 import software.amazon.awssdk.services.emr.model.InstanceGroupConfig
@@ -15,8 +17,8 @@ final case class ClusterDef(
     name: String,
     amiId: Option[AmiId] = None, //AmiId.amazonLinux_2018_3,
     instances: Int = 3,
-    masterInstanceType: InstanceType = InstanceType.m5_4xlarge,
-    slaveInstanceType: InstanceType = InstanceType.m5_2xlarge,
+    masterInstanceType: InstanceType = InstanceType.GeneralPurpose.m4xlarge,
+    slaveInstanceType: InstanceType = InstanceType.GeneralPurpose.m2xlarge,
     masterVolumeSizeInGB: Int = 32,
     slaveVolumeSizeInGB: Int = 32,
     applications: Seq[ApplicationName] = ClusterDef.defaultApplications,

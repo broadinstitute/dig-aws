@@ -17,7 +17,7 @@ object JobStep {
   import Implicits._
 
   /** Extract the name of a job from its URI. */
-  private def toJobName(uri: URI): String = uri.basename.trim match {
+  def toJobName(uri: URI): String = uri.basename.trim match {
     case ""       => uri.toString
     case nonEmpty => nonEmpty
   }

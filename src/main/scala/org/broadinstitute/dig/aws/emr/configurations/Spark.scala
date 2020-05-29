@@ -1,5 +1,7 @@
 package org.broadinstitute.dig.aws.emr.configurations
 
+import org.broadinstitute.dig.aws.MemorySize
+
 /** Spark classifications, properties, and configurations.
   */
 object Spark {

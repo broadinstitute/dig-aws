@@ -1,16 +1,12 @@
 package org.broadinstitute.dig.aws.config.emr
 
-import scala.collection.Seq
-import scala.reflect.ManifestFactory.classType
-import scala.util.Try
+import org.broadinstitute.dig.aws.config.EmrConfig
 
-import org.broadinstitute.dig.aws.emr.AmiId
-import org.broadinstitute.dig.aws.emr.Cluster
-import org.broadinstitute.dig.aws.emr.InstanceType
+import scala.util.Try
+import org.broadinstitute.dig.aws.emr.{AmiId, ClusterDef}
 import org.json4s.DefaultFormats
 import org.json4s.jackson.Serialization.read
 import org.json4s.jackson.Serialization.write
-import org.scalactic.source.Position.apply
 import org.scalatest.FunSuite
 
 /**
@@ -23,10 +19,7 @@ final class EmrTest extends FunSuite {
    * configuration package and aren't (typically) serialized, but they have
    * serializers just in case, so might as well test them anyway.
    */
-  val customSerializers = EmrConfig.customSerializers ++ Seq(
-    AmiId.Serializer,
-    InstanceType.Serializer,
-  )
+  private val customSerializers = EmrConfig.customSerializers :+ AmiId.Serializer
 
   /**
    * Each case-class for the EMR cluster string types should assert if and
@@ -53,40 +46,29 @@ final class EmrTest extends FunSuite {
     assert(read[A](json) == x)
   }
 
-  test("EMR types - AmiId") {
+  test("emr types - AmiId") {
     testSerialize[AmiId](AmiId.apply, "ami-123456", "amiXXX-123456")
   }
 
-  test("EMR types - ReleaseLabel") {
+  test("emr types - ReleaseLabel") {
     testSerialize[ReleaseLabel](ReleaseLabel.apply, "emr-x.x.x", "emrXXX-x.x.x")
   }
 
-  test("EMR types - RoleId") {
+  test("emr types - RoleId") {
     testSerialize[RoleId](RoleId.apply, "some-silly-role-id")
   }
 
-  test("EMR types - SecurityGroupId") {
+  test("emr types - SecurityGroupId") {
     testSerialize[SecurityGroupId](SecurityGroupId.apply, "sg-123456", "sgXXX-123456")
   }
 
-  test("EMR types - SubnetId") {
+  test("emr types - SubnetId") {
     testSerialize[SubnetId](SubnetId.apply, "subnet-123456", "subnetXXX-123456")
   }
 
-  test("EMR types - InstanceType") {
-    val someKnownInstanceTypes = List(
-      InstanceType.m5_2xlarge,
-      InstanceType.c5_9xlarge,
-    )
-
-    someKnownInstanceTypes.foreach { it =>
-      testSerialize(InstanceType.apply, it.value)
-    }
-  }
-
-  test("EMR types - Cluster name") {
-    val clusterOK  = Try(Cluster(name = "_foo12_abc"))
-    val clusterErr = Try(Cluster(name = "_foo12_abc bar"))
+  test("emr types - Cluster name") {
+    val clusterOK  = Try(ClusterDef(name = "_foo12_abc"))
+    val clusterErr = Try(ClusterDef(name = "_foo12_abc bar"))
 
     assert(clusterOK.isSuccess)
     assert(clusterErr.isFailure)

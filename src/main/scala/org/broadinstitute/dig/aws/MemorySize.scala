@@ -1,4 +1,4 @@
-package org.broadinstitute.dig.aws.emr.configurations
+package org.broadinstitute.dig.aws
 
 /** Memory units would be bytes, megabytes, gigabytes, etc. */
 abstract case class MemoryUnit(unit: String, unitsPerBytes: Int)

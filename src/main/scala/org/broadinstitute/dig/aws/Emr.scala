@@ -1,6 +1,7 @@
 package org.broadinstitute.dig.aws
 
 import com.typesafe.scalalogging.LazyLogging
+
 import org.broadinstitute.dig.aws.config.EmrConfig
 import org.broadinstitute.dig.aws.emr.ClusterDef
 import org.broadinstitute.dig.aws.emr.configurations.Configuration
