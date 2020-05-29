@@ -16,7 +16,7 @@ import scala.collection.mutable.ListBuffer
 object S3 extends LazyLogging {
 
   /** S3 client for storage. All buckets can share a single client. */
-  val client: S3Client = S3Client.builder.build
+  lazy val client: S3Client = S3Client.builder.build
 
   /** Methods for interacting with a specific bucket. */
   final class Bucket(val bucket: String) {

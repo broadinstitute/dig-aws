@@ -17,7 +17,7 @@ import software.amazon.awssdk.services.emr.model.{AddJobFlowStepsRequest, AddJob
 object Emr extends LazyLogging {
 
   /** AWS SDK client. All runners can share a single client. */
-  val client: EmrClient = EmrClient.builder.build
+  lazy val client: EmrClient = EmrClient.builder.build
 
   /** Runners launch and add steps to job clusters. */
   final class Runner(config: EmrConfig, logBucket: String) {

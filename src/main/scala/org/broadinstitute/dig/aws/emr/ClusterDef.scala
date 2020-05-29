@@ -1,14 +1,15 @@
 package org.broadinstitute.dig.aws.emr
 
-import org.broadinstitute.dig.aws.JobStep
-import org.broadinstitute.dig.aws.ec2.InstanceType
+import org.broadinstitute.dig.aws.{JobStep, MemorySize}
+import org.broadinstitute.dig.aws.Ec2.Strategy
 import org.broadinstitute.dig.aws.emr.configurations.Configuration
-
 import software.amazon.awssdk.services.emr.model.EbsBlockDeviceConfig
 import software.amazon.awssdk.services.emr.model.EbsConfiguration
 import software.amazon.awssdk.services.emr.model.InstanceGroupConfig
 import software.amazon.awssdk.services.emr.model.InstanceRoleType
 import software.amazon.awssdk.services.emr.model.VolumeSpecification
+
+import MemorySize.Implicits._
 
 /** Parameterized configuration for an EMR cluster. Constant settings are
   * located in `config.emr.EmrConfig` and are loaded in the JSON.
@@ -17,8 +18,8 @@ final case class ClusterDef(
     name: String,
     amiId: Option[AmiId] = None, //AmiId.amazonLinux_2018_3,
     instances: Int = 3,
-    masterInstanceType: InstanceType = InstanceType.GeneralPurpose.m4xlarge,
-    slaveInstanceType: InstanceType = InstanceType.GeneralPurpose.m2xlarge,
+    masterInstanceType: Strategy = Strategy.default,
+    slaveInstanceType: Strategy = Strategy.default,
     masterVolumeSizeInGB: Int = 32,
     slaveVolumeSizeInGB: Int = 32,
     applications: Seq[ApplicationName] = ClusterDef.defaultApplications,
@@ -43,7 +44,7 @@ final case class ClusterDef(
 
     InstanceGroupConfig.builder
       .ebsConfiguration(ebsConfig)
-      .instanceType(masterInstanceType.value)
+      .instanceType(masterInstanceType.instanceType.toString)
       .instanceRole(InstanceRoleType.MASTER)
       .instanceCount(1)
       .build
@@ -61,7 +62,7 @@ final case class ClusterDef(
 
     InstanceGroupConfig.builder
       .ebsConfiguration(ebsConfig)
-      .instanceType(slaveInstanceType.value)
+      .instanceType(slaveInstanceType.instanceType.toString)
       .instanceRole(InstanceRoleType.CORE)
       .instanceCount(instances - 1)
       .build
