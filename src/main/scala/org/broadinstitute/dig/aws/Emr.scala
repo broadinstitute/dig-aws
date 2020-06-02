@@ -45,7 +45,6 @@ object Emr extends LazyLogging {
         .additionalSlaveSecurityGroups(config.securityGroupIds.map(_.value): _*)
         .ec2SubnetId(config.subnetId.value)
         .ec2KeyName(config.sshKeyName)
-        .keepJobFlowAliveWhenNoSteps(cluster.keepAliveWhenNoSteps)
         .instanceGroups(cluster.instanceGroups.asJava)
         .keepJobFlowAliveWhenNoSteps(true)
         .build
