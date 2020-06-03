@@ -22,11 +22,6 @@ object JobStep {
     case nonEmpty => nonEmpty
   }
 
-  /** Create a shell string for setting environment variables. */
-  private def environ(env: Seq[(String, String)]): String = {
-    env.map { case (key, value) => s"$key='$value'" }.mkString(" ")
-  }
-
   /** Create a new Map Reduce step given a JAR (S3 path) the main class to
     * run, and any command line arguments to pass along to the JAR.
     */

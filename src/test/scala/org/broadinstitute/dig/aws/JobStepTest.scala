@@ -10,6 +10,47 @@ import software.amazon.awssdk.services.emr.model.HadoopJarStepConfig
 final class JobStepTest extends FunSuite {
   import JobStep.toJobName
 
+  test("step equality") {
+    val mrStep1 = JobStep.MapReduce(new URI("http://foo/bar/mr"), "main", Seq("p1", "p2"))
+    val pigStep1 = JobStep.Pig(new URI("http://foo/bar/pig"), "p1" -> "a", "p2" -> "b")
+    val sparkStep1 = JobStep.PySpark(new URI("http://foo/bar/spark"), "arg1", "arg2")
+    val scriptStep1 = JobStep.PySpark(new URI("http://foo/bar/script"), "arg1", "arg2")
+    val mrStep2 = JobStep.MapReduce(new URI("http://foo/bar/mr"), "main", Seq("p1", "p2"))
+    val pigStep2 = JobStep.Pig(new URI("http://foo/bar/pig"), "p1" -> "a", "p2" -> "b")
+    val sparkStep2 = JobStep.PySpark(new URI("http://foo/bar/spark"), "arg1", "arg2")
+    val scriptStep2 = JobStep.PySpark(new URI("http://foo/bar/script"), "arg1", "arg2")
+    val mrStep3 = JobStep.MapReduce(new URI("http://foo/bar/mr"), "main2", Seq("p1", "p2", "p3"))
+
+    assert(mrStep1 == mrStep2)
+    assert(pigStep1 == pigStep2)
+    assert(sparkStep1 == sparkStep2)
+    assert(scriptStep1 == scriptStep2)
+    assert(mrStep1 != mrStep3)
+    assert(pigStep1 != sparkStep2)
+    assert(sparkStep1 != scriptStep2)
+    assert(scriptStep1 != pigStep2)
+  }
+
+  test("job equality") {
+    val job1 = Seq(
+      JobStep.MapReduce(new URI("http://foo/bar/mr"), "main", Seq("p1", "p2")),
+      JobStep.Pig(new URI("http://foo/bar/pig"), "p1" -> "a", "p2" -> "b"),
+      JobStep.PySpark(new URI("http://foo/bar/spark"), "arg1", "arg2"),
+      JobStep.PySpark(new URI("http://foo/bar/script"), "arg1", "arg2"),
+    )
+
+    val job2 = Seq(
+      JobStep.MapReduce(new URI("http://foo/bar/mr"), "main", Seq("p1", "p2")),
+      JobStep.Pig(new URI("http://foo/bar/pig"), "p1" -> "a", "p2" -> "b"),
+      JobStep.PySpark(new URI("http://foo/bar/spark"), "arg1", "arg2"),
+      JobStep.PySpark(new URI("http://foo/bar/script"), "arg1", "arg2"),
+    )
+
+    assert(job1 == job2)
+    assert(job1.drop(1) != job2)
+    assert(job1.take(1) != job2)
+  }
+
   test("toJobName - empty basename") {
     import Implicits._
 
