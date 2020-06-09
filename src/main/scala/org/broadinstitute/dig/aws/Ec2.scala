@@ -33,26 +33,41 @@ object Ec2 extends LazyLogging {
     allInstanceTypes.find(_.instanceType == it)
   }
 
-  /** Strategy and size of instance for looking them up. */
-  final case class Strategy(gen: String, vCPUs: Int, mem: MemorySize) {
-    lazy val instanceType: InstanceType = {
-      allInstanceTypes
-        .view
-        .filter(_.vCpuInfo.defaultVCpus >= vCPUs)
-        .filter(_.memoryInfo.sizeInMiB >= mem.toMB.size)
-        .filter(_.instanceTypeAsString.startsWith(s"$gen."))
-        .toSeq
-        .sortBy(_.memoryInfo.sizeInMiB)
-        .headOption
-        .map(_.instanceType)
-        .getOrElse {
-          throw new IllegalArgumentException(s"No EC2 instance type matching strategy: $toString")
-        }
-    }
+  sealed trait Strategy {
+    def instanceType: InstanceType
   }
 
   /** Instance size strategies. */
   object Strategy {
+    def apply(instanceType: InstanceType): Literal = Literal(instanceType)
+
+    def apply(name: String): Literal = Literal(name)
+
+    def apply(gen: String, vCPUs: Int, mem: MemorySize): ByCriteria = ByCriteria(gen, vCPUs, mem)
+
+    final case class Literal(instanceType: InstanceType) extends Strategy
+
+    object Literal {
+      def apply(name: String): Literal = Literal(InstanceType.fromValue(name))
+    }
+
+    /** Strategy and size of instance for looking them up. */
+    final case class ByCriteria(gen: String, vCPUs: Int, mem: MemorySize) extends Strategy {
+      lazy val instanceType: InstanceType = {
+        allInstanceTypes
+          .view
+          .filter(_.vCpuInfo.defaultVCpus >= vCPUs)
+          .filter(_.memoryInfo.sizeInMiB >= mem.toMB.size)
+          .filter(_.instanceTypeAsString.startsWith(s"$gen."))
+          .toSeq
+          .sortBy(_.memoryInfo.sizeInMiB)
+          .headOption
+          .map(_.instanceType)
+          .getOrElse {
+            throw new IllegalArgumentException(s"No EC2 instance type matching strategy: $toString")
+          }
+      }
+    }
 
     /** The default EC2 strategy to use. */
     val default: Strategy = generalPurpose()
