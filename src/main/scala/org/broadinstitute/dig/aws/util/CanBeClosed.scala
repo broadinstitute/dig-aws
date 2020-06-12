@@ -1,0 +1,29 @@
+package org.broadinstitute.dig.aws.util
+
+import scala.io.Source
+import java.io.Closeable
+
+/**
+ * @author clint
+ * date: Mar 11, 2016
+ */
+trait CanBeClosed[C] {
+  def close(c: C): Unit
+}
+
+object CanBeClosed {
+  implicit def javaCloseablesCanBeClosed[C <: Closeable]: CanBeClosed[C] = _.close()
+
+  implicit def scalaSourcesCanBeClosed[S <: Source]: CanBeClosed[S] = _.close()
+
+  def using[A, C: CanBeClosed](c: C)(f: C => A): A = {
+    try {
+      f(c)
+    } finally {
+      val closer = implicitly[CanBeClosed[C]]
+
+      closer.close(c)
+    }
+  }
+}
+

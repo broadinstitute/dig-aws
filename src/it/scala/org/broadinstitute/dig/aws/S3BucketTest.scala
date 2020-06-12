@@ -17,109 +17,86 @@ import org.json4s.jackson.Serialization.read
   * @author clint
   * Jul 27, 2018
   */
-final class AwsTest extends AwsFunSuite {
+final class S3BucketTest extends AwsFunSuite {
   
-  override protected val aws: Aws = {
-    //Config file needs to be in place before this test will work.
-    val configFile = new File("src/it/resources/config.json")
-    
-    val configFileContents = Source.fromFile(configFile).mkString
-    
-    implicit val formats: Formats = DefaultFormats ++ EmrConfig.customSerializers
-
-    /** Load the settings file and parse it. */
-    val awsConfig = read[AwsConfig](configFileContents)
-    
-    new Aws(awsConfig)
-  }
-  
-  testWithPseudoDirIO("ETagLastModified") {
-    doETagLastModifiedTest
-  }
-
-  /**
-    * Create a cluster and run a simple script job.
-    */
-  testWithCluster("Simple Cluster", "test_script.py")
-
   /**
     * Put() an object, then get() it
     */
-  testWithPseudoDirIO("PutGet") {
+  testWithPseudoDir("PutGet") {
     doPutGetTest
   }
   
   /**
 		* Put() a file, then get() it
 		*/
-  testWithPseudoDirIO("PutGetFile") {
+  testWithPseudoDir("PutGetFile") {
     doPutGetFileTest
   }
 
   /**
     * Make a pseudo-dir, then make the same one again with different metadata
     */
-  testWithPseudoDirIO("Mkdir") {
+  testWithPseudoDir("Mkdir") {
     doMkdirTest
   }
 
   /**
     * Create 1 non-pseudo-dir object and list it
     */
-  testWithPseudoDirIO("PutLsNonDir") {
+  testWithPseudoDir("PutLsNonDir") {
     doPutLsOneObjectTest(_ + "/foo")
   }
 
   /**
     * Create 1 pseudo-dir object and list it
     */
-  testWithPseudoDirIO("PutLsDir") {
+  testWithPseudoDir("PutLsDir") {
     doPutLsOneObjectTest(_ + "/foo/")
   }
 
   /**
     * Create 1 object inside a pseudo-dir and list it
     */
-  testWithPseudoDirIO("PutLs1") {
+  testWithPseudoDir("PutLs1") {
     doPutLsTest(1)
   }
 
   /**
     * Create 10 objects and list them
     */
-  testWithPseudoDirIO("PutLs10") {
+  testWithPseudoDir("PutLs10") {
     doPutLsTest(10)
   }
 
   /**
     * Create 2500 objects and list them
     */
-  testWithPseudoDirIO("PutLs2500") {
+  testWithPseudoDir("PutLs2500") {
     doPutLsTest(2500)
   }
 
   /**
     * Create an object and delete it
     */
-  testWithPseudoDirIO("RmExists") {
+  testWithPseudoDir("RmExists") {
     doRmTest
   }
 
   /**
     * Create 10 objects in a pseudo-dir and delete them
     */
-  testWithPseudoDirIO("RmDir10") {
+  testWithPseudoDir("RmDir10") {
     doRmDirTest(10)
   }
 
   /**
     * Create 2500 objects in a pseudo-dir and delete them
     */
-  testWithPseudoDirIO("RmDir2500") {
+  testWithPseudoDir("RmDir2500") {
     doRmDirTest(2500)
   }
 
-  testWithPseudoDirIO("Upload") {
+  testWithPseudoDir("Upload") {
     doUploadTest("test_upload.txt")
   }
 
@@ -226,8 +203,7 @@ final class AwsTest extends AwsFunSuite {
   }
 
   //Put an object, then read it back again
-  private lazy val doPutGetTest: String => IO[Unit] = { pseudoDirKey =>
-    import cats.implicits._
+  private def doPutGetTest(pseudoDirKey: String): Unit = {
     import Implicits._
 
     val pseudoDirKeyWithSlash = s"$pseudoDirKey/"
@@ -235,17 +211,16 @@ final class AwsTest extends AwsFunSuite {
     val contents = "asdkljaslkdjalskdjklasdj"
     val key      = s"${pseudoDirKey}/some-key"
 
-    for {
-      beforePut       <- aws.ls(pseudoDirKeyWithSlash)
-      _               <- aws.put(key, contents)
-      contentsFromAws <- aws.get(key).map(_.readAsString())
-    } yield {
-      //sanity check: the thing we're putting shouldn't have been there yet
-      assert(beforePut == Nil)
+    val beforePut = bucket.ls(pseudoDirKeyWithSlash)
 
-      assert(contentsFromAws == contents)
-      ()
-    }
+    //sanity check: the thing we're putting shouldn't have been there yet
+    assert(beforePut === Nil)
+
+    bucket.put(key, contents)
+
+    val contentsFromAws = bucket.get(key).getmkString()
+
+    assert(contentsFromAws === contents)
   }
   
   //Put an object, then read it back again
@@ -302,30 +277,6 @@ final class AwsTest extends AwsFunSuite {
 
       //Convert to sets to ignore ordering
       assert(contents0.toSet == Set(s"${pseudoDirKey}/metadata"))
-      ()
-    }
-  }
-  
-  private lazy val doETagLastModifiedTest: String => IO[Unit] = { pseudoDirKey =>
-    val key = s"${pseudoDirKey}/foo.txt"
-    
-    val now = Instant.now
-    
-    for {
-      missingETag <- aws.eTagOf(key)
-      missingLastModified <- aws.lastModifiedTimeOf(key)
-      nonExistentKeyExists <- aws.exists(key)
-      _ <- aws.put(key, Paths.get("src/it/resources/test_upload.txt"))
-      eTag <- aws.eTagOf(key)
-      lastModified <- aws.lastModifiedTimeOf(key)
-    } yield {
-      assert(nonExistentKeyExists == false)
-      assert(missingLastModified === None)
-      assert(missingETag == None)
-      
-      assert(eTag.get == "76323bb2bba387d27f9e2a5d17c03ac2")
-      assert(lastModified.get.toEpochMilli >= now.toEpochMilli)
-      
       ()
     }
   }
