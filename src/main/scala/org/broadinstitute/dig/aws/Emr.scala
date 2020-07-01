@@ -119,19 +119,20 @@ object Emr extends LazyLogging {
       * that need to run (in any order!). As a cluster becomes available
       * steps from the various jobs will be sent to it for running.
       */
-    def runJobs(cluster: ClusterDef, env: Map[String, String], jobs: Seq[Seq[JobStep]], maxParallel: Int = 5): Unit = {
+    def runJobs(cluster: ClusterDef, env: Map[String, String], jobs: Seq[Seq[JobStep]], pendingBatchSize: Int = 2, maxParallel: Int = 5): Unit = {
       val jobList = Random.shuffle(jobs).toList
-      val totalSteps = jobList.flatten.size
 
       // determine the initial jobs to spin up each cluster with
       val (initialJobs, remainingJobs) = jobList.splitAt(maxParallel)
 
-      // pause between status checks, min pending steps per cluster
+      // pause between status checks
       val pollPeriod = 2.minutes
-      val pendingStepsPerJobFlow = 2
 
       // create a cluster for each initial, parallel job
       val clusters = initialJobs.map(job => createCluster(cluster, env, job))
+
+      // calculate the total number of steps (including bootstrap steps)
+      val totalSteps = jobList.flatten.size + (cluster.bootstrapSteps.size * clusters.size)
 
       // queue of the remaining jobs and count of completed steps
       var stepQueue = remainingJobs.flatten
@@ -154,8 +155,8 @@ object Emr extends LazyLogging {
                 val pending = steps.count(_.status.state == StepState.PENDING)
 
                 // always keep steps pending in the cluster...
-                if (pending < pendingStepsPerJobFlow && remainingJobs.nonEmpty) {
-                  val (steps, rest) = stepQueue.splitAt(pendingStepsPerJobFlow - pending)
+                if (pending < pendingBatchSize && remainingJobs.nonEmpty) {
+                  val (steps, rest) = stepQueue.splitAt(pendingBatchSize - pending)
 
                   // add multiple steps per request to ensure rate limit isn't exceeded
                   addStepsToCluster(cluster, steps)
