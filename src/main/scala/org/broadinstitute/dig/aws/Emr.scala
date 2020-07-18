@@ -135,7 +135,7 @@ object Emr extends LazyLogging {
       val totalSteps = jobList.flatten.size + (cluster.bootstrapSteps.size * clusters.size)
 
       // queue of the remaining jobs and count of completed steps
-      var stepQueue = remainingJobs.flatten
+      var jobQueue = remainingJobs
       var lastStepsCompleted = 0
 
       // indicate how many steps are being distributed across clusters
@@ -154,13 +154,16 @@ object Emr extends LazyLogging {
               case Right(steps) =>
                 val pending = steps.count(_.status.state == StepState.PENDING)
 
-                // always keep steps pending in the cluster...
-                if (pending < pendingBatchSize && remainingJobs.nonEmpty) {
-                  val (steps, rest) = stepQueue.splitAt(pendingBatchSize - pending)
+                // always keep steps pending in the cluster, but keep entire jobs together
+                if (pending < pendingBatchSize && jobQueue.nonEmpty) {
+                  val n = ((pendingBatchSize - pending) / jobQueue.head.size).max(1)
+
+                  // take as many jobs as needed to reach pending size
+                  val (jobs, rest) = jobQueue.splitAt(n)
 
                   // add multiple steps per request to ensure rate limit isn't exceeded
-                  addStepsToCluster(cluster, steps)
-                  stepQueue = rest
+                  addStepsToCluster(cluster, jobs.flatten)
+                  jobQueue = rest
                 }
 
                 // count the completed steps
