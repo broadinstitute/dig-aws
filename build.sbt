@@ -1,5 +1,5 @@
 lazy val Versions = new {
-  val Aws              = "2.11.12"
+  val Aws              = "2.13.56"
   val Janino           = "3.1.2"
   val LogbackClassic   = "1.2.3"
   val LogbackColorizer = "1.0.1"
@@ -23,9 +23,9 @@ lazy val scalacOpts = Seq(
 )
 
 lazy val mainDeps = Seq(
+  "software.amazon.awssdk"         % "ec2"                  % Versions.Aws,
   "software.amazon.awssdk"         % "emr"                  % Versions.Aws,
   "software.amazon.awssdk"         % "s3"                   % Versions.Aws,
-  "software.amazon.awssdk"         % "ec2"                  % Versions.Aws,
   "software.amazon.awssdk"         % "secretsmanager"       % Versions.Aws,
   "com.typesafe.scala-logging"     %% "scala-logging"       % Versions.ScalaLogging,
   "ch.qos.logback"                 % "logback-classic"      % Versions.LogbackClassic,

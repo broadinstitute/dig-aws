@@ -9,6 +9,7 @@ import org.broadinstitute.dig.aws.emr.configurations.Configuration
 import scala.concurrent.duration._
 import scala.jdk.CollectionConverters._
 import scala.util.Random
+
 import software.amazon.awssdk.services.emr.EmrClient
 import software.amazon.awssdk.services.emr.model.{AddJobFlowStepsRequest, AddJobFlowStepsResponse, JobFlowInstancesConfig, ListStepsRequest, RunJobFlowRequest, RunJobFlowResponse, StepState, StepSummary, TerminateJobFlowsRequest}
 
@@ -82,7 +83,9 @@ object Emr extends LazyLogging {
       */
     def clusterState(cluster: RunJobFlowResponse): Either[StepSummary, List[StepSummary]] = {
       val req = ListStepsRequest.builder.clusterId(cluster.jobFlowId).build
-      val steps = client.listStepsPaginator(req).steps.asScala
+      val steps = Utils.awsRetry() {
+        client.listStepsPaginator(req).steps.asScala
+      }
 
       // either left (failed step) or right (all steps)
       steps.foldLeft(Right(List.empty): Either[StepSummary, List[StepSummary]]) {
@@ -125,9 +128,6 @@ object Emr extends LazyLogging {
       // determine the initial jobs to spin up each cluster with
       val (initialJobs, remainingJobs) = jobList.splitAt(maxParallel)
 
-      // pause between status checks
-      val pollPeriod = 2.minutes
-
       // create a cluster for each initial, parallel job
       val clusters = initialJobs.map(job => createCluster(cluster, env, job))
 
@@ -138,14 +138,23 @@ object Emr extends LazyLogging {
       var jobQueue = remainingJobs
       var lastStepsCompleted = 0
 
+      // the initial poll period is about how long it takes to provision a cluster
+      val maxPollPeriod = 5.minutes
+      var pollPeriod = maxPollPeriod
+
       // indicate how many steps are being distributed across clusters
-      logger.info(s"${clusters.size} job flows created; 0/$totalSteps steps complete.")
+      logger.info(s"${clusters.size} job flows created; $totalSteps steps")
 
       // loop until all jobs are complete
       try {
+        val startTime = System.currentTimeMillis
+
         while (lastStepsCompleted < totalSteps) {
           // wait between cluster polling so we don't hit the AWS limit
           Thread.sleep(pollPeriod.toMillis)
+
+          // reset the poll period back to the maximum
+          pollPeriod = maxPollPeriod
 
           // update the progress of each cluster
           val progress = for (cluster <- clusters) yield {
@@ -153,6 +162,9 @@ object Emr extends LazyLogging {
               case Left(failedStep) => throw new Exception(s"Job failed (step ${failedStep.id}); see: https://console.aws.amazon.com/elasticmapreduce/home?region=us-east-1#cluster-details:${cluster.jobFlowId}")
               case Right(steps) =>
                 val pending = steps.count(_.status.state == StepState.PENDING)
+
+                // reduce the poll period to the minimum number of steps being waited on
+                pollPeriod = pollPeriod.toMinutes.min(pending + 1).minutes
 
                 // always keep steps pending in the cluster, but keep entire jobs together
                 if (pending < pendingBatchSize && jobQueue.nonEmpty) {
@@ -171,17 +183,30 @@ object Emr extends LazyLogging {
             }
           }
 
-          // show progress of the job queue if it has improved
+          // get the total number of completed steps
           val stepsCompleted = progress.sum
 
+          // log any updated progress
           if (stepsCompleted > lastStepsCompleted) {
-            logger.info(s"Job queue progress: $stepsCompleted/$totalSteps steps complete.")
+            val pct = stepsCompleted * 100 / totalSteps
+            val elapsed = (System.currentTimeMillis - startTime).milliseconds
+
+            // calculate a pretty string for estimated time remaining
+            val timeLeft = elapsed * (totalSteps - stepsCompleted) / stepsCompleted match {
+              case d if d > 1.day    => d.toDays.days.toString
+              case d if d > 1.hour   => d.toHours.hours.toString
+              case d if d > 1.minute => d.toMinutes.minutes.toString
+              case d                 => d.toSeconds.seconds.toString
+            }
+
+            // update the current progress
+            logger.info(s"Job queue progress: $stepsCompleted/$totalSteps steps ($pct%); est. $timeLeft remaining")
             lastStepsCompleted = stepsCompleted
           }
         }
       }
 
-        // always ensure the clusters are terminated
+      // always ensure the clusters are terminated
       finally {
         terminateClusters(clusters)
       }
