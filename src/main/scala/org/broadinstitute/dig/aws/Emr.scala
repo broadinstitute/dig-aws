@@ -78,34 +78,23 @@ object Emr extends LazyLogging {
       client.runJobFlow(request)
     }
 
-    /** Returns the list of completed and active steps on the cluster. If any
-      * steps failed, it will throw an exception.
-      */
-    def clusterStatus(cluster: RunJobFlowResponse, stepIds: Seq[String]): (Array[String], Array[String]) = {
-      var completed = Array.empty[String]
-      var active = Array.empty[String]
-
-      // create the request for just the active steps
+    /** Returns an array of active step IDs in a cluster. */
+    def clusterStatus(cluster: RunJobFlowResponse, stepIds: Seq[String]): Array[String] = {
       val req = ListStepsRequest.builder
         .clusterId(cluster.jobFlowId)
         .stepIds(stepIds.asJava)
         .build
 
-      // get the status of those steps
-      for (step <- client.listStepsPaginator(req).steps.asScala) {
+      // keep only the active or pending steps
+      client.listStepsPaginator(req).steps.asScala.toArray.collect { step =>
         step.status.state match {
+          case StepState.PENDING | StepState.RUNNING => step.id
           case StepState.FAILED => throw new Exception(step.status.stateChangeReason.message)
-          case StepState.COMPLETED => completed +:= step.id
-          case StepState.PENDING | StepState.RUNNING => active +:= step.id
-          case _ => ()
         }
       }
-
-      (completed, active)
     }
 
-    /** Terminate any running clusters.
-      */
+    /** Terminate a list of running clusters. */
     def terminateClusters(clusters: Seq[RunJobFlowResponse]): Unit = {
       val flowIds = clusters.map(_.jobFlowId).asJava
       val req = TerminateJobFlowsRequest.builder.jobFlowIds(flowIds).build
@@ -138,7 +127,7 @@ object Emr extends LazyLogging {
       // this is an AWS limit in place when polling the status of steps
       val maxActiveSteps = 10
       val nClusters = allJobs.size.min(maxParallel)
-      val totalSteps = jobs.flatMap(_.steps).size + (cluster.bootstrapSteps.size * nClusters)
+      val totalSteps = jobs.flatMap(_.steps).size
 
       // indicate how many jobs are being distributed across clusters
       logger.info(s"Creating $nClusters clusters for ${jobs.size} jobs...")
@@ -148,47 +137,47 @@ object Emr extends LazyLogging {
         createCluster(cluster, env)
       }
 
-      // clusters are now running
-      logger.info("Clusters launched.")
-
-      /* At this point we evenly divide all the jobs among the clusters and then
-       * flatten the steps. Each cluster (by index) will have its own array of
-       * steps that can be taken from and updated in order to add them to the
-       * cluster when it has available step space.
-       */
-      val stepQueue = LazyList.continually(clusters)
-        .flatten
-        .zip(Random.shuffle(allJobs))
-        .groupMap(_._1)(_._2)
-        .toArray
-        .map(_._2.flatMap(_.steps).toList)
-
-      /* Steps taken from the stepQueue and added to a cluster have their step ids
-       * added to a parallel array for each cluster. This is so only the status of
-       * those steps can be checked, as the number of steps in a cluster can grow
-       * quite large.
-       */
-      val stepIds = clusters.map(_ => Array.empty[String]).toArray
-
-      // run the jobs
+      // now run, but wrap so clusters will terminate if something goes wrong
       val runResult = Try {
-        var lastStepsCompleted = -1
-        var stepsCompleted = 0
+        logger.info("Clusters launched.")
 
-        // loop forever, waiting for all steps to complete
-        while (lastStepsCompleted < totalSteps) {
+        /* At this point we evenly divide all the jobs among the clusters and then
+         * flatten the steps. Each cluster (by index) will have its own array of
+         * steps that can be taken from and updated in order to add them to the
+         * cluster when it has available step space.
+         */
+        val stepQueue = LazyList.continually(clusters)
+          .flatten
+          .zip(Random.shuffle(allJobs))
+          .groupMap(_._1)(_._2)
+          .toArray
+          .map(_._2.flatMap(_.steps).toList)
+
+        // quick sanity check...
+        assert(stepQueue.map(_.length).sum == totalSteps)
+
+        // run the jobs
+        var lastCompletedSteps = -1
+
+        /* Steps taken from the stepQueue and added to a cluster have their step ids
+         * added to a set of parallel arrays (one per cluster).
+         */
+        val activeSteps = clusters.map(_ => Array.empty[String]).toArray
+
+        // loop until all step queues and active step arrays are empty
+        while (stepQueue.exists(_.nonEmpty) || activeSteps.exists(_.nonEmpty)) {
           Thread.sleep(5.minutes.toMillis)
 
           // get the step status of each cluster
           for ((cluster, i) <- clusters.zipWithIndex) {
-            val (completedIds, activeIds) = clusterStatus(cluster, stepIds(i).toIndexedSeq)
-
-            // update the list of steps to watch to only the active ones
-            stepIds(i) = activeIds
+            if (activeSteps(i).nonEmpty) {
+              activeSteps(i) = clusterStatus(cluster, activeSteps(i).toIndexedSeq)
+            }
 
             // if there are too few active steps, pull steps from the queue
-            if (activeIds.length < maxActiveSteps && stepQueue(i).nonEmpty) {
-              val (stepsToAdd, stepsRemaining) = stepQueue(i).splitAt(maxActiveSteps - activeIds.length)
+            if (activeSteps(i).length < maxActiveSteps && stepQueue(i).nonEmpty) {
+              val n = maxActiveSteps - activeSteps(i).length
+              val (stepsToAdd, stepsRemaining) = stepQueue(i).splitAt(n)
               val req = AddJobFlowStepsRequest.builder
                 .jobFlowId(cluster.jobFlowId)
                 .steps(stepsToAdd.map(_.config).asJava)
@@ -199,23 +188,27 @@ object Emr extends LazyLogging {
 
               // add new step ids to the set of active steps for this cluster
               if (response.hasStepIds) {
-                stepIds(i) ++= response.stepIds.asScala
+                activeSteps(i) ++= response.stepIds.asScala
               }
 
               // update the step queue for this cluster
               stepQueue(i) = stepsRemaining
             }
-
-            // add the newly completed steps
-            stepsCompleted += completedIds.length
           }
 
+          /* The number of completed steps is the total number of steps less the number
+           * of active steps and less the number of steps still in the queue.
+           */
+          val nActive = activeSteps.map(_.length).sum
+          val nQueued = stepQueue.map(_.length).sum
+          val completedSteps = totalSteps - (nActive + nQueued)
+
           // update the progress log
-          if (stepsCompleted > lastStepsCompleted) {
-            logger.info(s"Job queue progress: $stepsCompleted/$totalSteps steps (${stepsCompleted * 100 / totalSteps}%)")
+          if (completedSteps > lastCompletedSteps) {
+            logger.info(s"Job queue progress: $completedSteps/$totalSteps steps (${completedSteps * 100 / totalSteps}%)")
 
             // update the total number of steps completed
-            lastStepsCompleted = stepsCompleted
+            lastCompletedSteps = completedSteps
           }
         }
       }
