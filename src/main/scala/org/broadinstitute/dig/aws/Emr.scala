@@ -156,13 +156,13 @@ object Emr extends LazyLogging {
         // quick sanity check...
         assert(stepQueue.map(_.length).sum == totalSteps)
 
-        // run the jobs
-        var lastCompletedSteps = -1
-
         /* Steps taken from the stepQueue and added to a cluster have their step ids
          * added to a set of parallel arrays (one per cluster).
          */
         val activeSteps = clusters.map(_ => Array.empty[String]).toArray
+
+        // cache of the last count of completed steps, so we don't spam the log
+        var lastCompletedSteps = -1
 
         // loop until all step queues and active step arrays are empty
         while (stepQueue.exists(_.nonEmpty) || activeSteps.exists(_.nonEmpty)) {
