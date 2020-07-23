@@ -1,15 +1,14 @@
 package org.broadinstitute.dig.aws.emr
 
-import org.broadinstitute.dig.aws.{JobStep, MemorySize}
+import org.broadinstitute.dig.aws.MemorySize
 import org.broadinstitute.dig.aws.Ec2.Strategy
 import org.broadinstitute.dig.aws.emr.configurations.Configuration
+
 import software.amazon.awssdk.services.emr.model.EbsBlockDeviceConfig
 import software.amazon.awssdk.services.emr.model.EbsConfiguration
 import software.amazon.awssdk.services.emr.model.InstanceGroupConfig
 import software.amazon.awssdk.services.emr.model.InstanceRoleType
 import software.amazon.awssdk.services.emr.model.VolumeSpecification
-
-import MemorySize.Implicits._
 
 /** Parameterized configuration for an EMR cluster. Constant settings are
   * located in `config.emr.EmrConfig` and are loaded in the JSON.
@@ -25,7 +24,7 @@ final case class ClusterDef(
     applications: Seq[ApplicationName] = ClusterDef.defaultApplications,
     applicationConfigurations: Seq[Configuration] = Seq.empty,
     bootstrapScripts: Seq[BootstrapScript] = Seq.empty,
-    bootstrapSteps: Seq[JobStep] = Seq.empty,
+    bootstrapSteps: Seq[Job.Step] = Seq.empty,
     visibleToAllUsers: Boolean = true,
 ) {
   require(name.matches("[A-Za-z_]+[A-Za-z0-9_]*"), s"Illegal cluster name: $name")

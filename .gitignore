@@ -1,13 +1,20 @@
+.idea/
+.settings/
+
+# metals language server
+.metals/
+.bloop/
+
+# built code
+target/
+project/project/
+/bin/
+
+# various dot files
 .cache-main
 .cache-tests
 .classpath
 .project
-.settings/
-target/
-project/target
-project/project/target
-/bin/
+
+# integration test files
 src/it/resources/config.json
-.idea/
-project/.idea/
-project/project/

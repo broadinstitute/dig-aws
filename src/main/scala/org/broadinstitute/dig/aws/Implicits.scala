@@ -19,6 +19,12 @@ object Implicits {
 
       path.substring(lastSep + 1)
     }
+
+    /** Extract the name of a job from its URI. */
+    def jobName: String = uri.basename.trim match {
+      case ""       => uri.toString
+      case nonEmpty => nonEmpty
+    }
   }
 
   /** S3 object methods. */

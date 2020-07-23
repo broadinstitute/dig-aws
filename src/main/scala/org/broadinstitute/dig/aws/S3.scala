@@ -78,6 +78,11 @@ object S3 extends LazyLogging {
       put(key, Source.fromResource(resource).mkString)
     }
 
+    /** Create a zero-byte file key in the bucket. */
+    def touch(key: String): PutObjectResponse = {
+      put(key, "")
+    }
+
     /** Download the contents of a key to a file. */
     def download(key: String, dest: Path, overwrite: Boolean = false): Try[GetObjectResponse] = {
       val delete = if (overwrite) Try(Files.delete(dest)) else Success(())
@@ -115,13 +120,15 @@ object S3 extends LazyLogging {
         val it = client.listObjectsV2Paginator(req).iterator().asScala
 
         for (listing <- it) {
-          val keys = listing.contents.asScala.map(_.key)
-          val objectsToDelete = keys.map(ObjectIdentifier.builder.key(_).build)
-          val delete = Delete.builder.objects(objectsToDelete.asJava).build
-          val req = DeleteObjectsRequest.builder.bucket(bucket).delete(delete).build
+          if (listing.hasContents) {
+            val keys = listing.contents.asScala.map(_.key)
+            val objectsToDelete = keys.map(ObjectIdentifier.builder.key(_).build)
+            val delete = Delete.builder.objects(objectsToDelete.asJava).build
+            val req = DeleteObjectsRequest.builder.bucket(bucket).delete(delete).build
 
-          // delete all the objects in this listing
-          client.deleteObjects(req)
+            // delete all the objects in this listing
+            client.deleteObjects(req)
+          }
         }
       } else {
         val req = DeleteObjectRequest.builder.bucket(bucket).key(key).build

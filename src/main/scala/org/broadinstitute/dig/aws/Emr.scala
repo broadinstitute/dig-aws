@@ -3,15 +3,15 @@ package org.broadinstitute.dig.aws
 import com.typesafe.scalalogging.LazyLogging
 
 import org.broadinstitute.dig.aws.config.EmrConfig
-import org.broadinstitute.dig.aws.emr.ClusterDef
+import org.broadinstitute.dig.aws.emr.{ClusterDef, Job}
 import org.broadinstitute.dig.aws.emr.configurations.Configuration
 
 import scala.concurrent.duration._
 import scala.jdk.CollectionConverters._
-import scala.util.Random
+import scala.util.{Failure, Random, Success, Try}
 
 import software.amazon.awssdk.services.emr.EmrClient
-import software.amazon.awssdk.services.emr.model.{AddJobFlowStepsRequest, AddJobFlowStepsResponse, JobFlowInstancesConfig, ListStepsRequest, RunJobFlowRequest, RunJobFlowResponse, StepState, StepSummary, TerminateJobFlowsRequest}
+import software.amazon.awssdk.services.emr.model.{AddJobFlowStepsRequest, JobFlowInstancesConfig, ListStepsRequest, RunJobFlowRequest, RunJobFlowResponse, StepState, TerminateJobFlowsRequest}
 
 /** AWS client for creating EMR clusters and running jobs.
   */
@@ -26,9 +26,9 @@ object Emr extends LazyLogging {
     /** Create a new cluster with some initial job steps and return the job
       * flow response, which can be used to add additional steps later.
       */
-    def createCluster(cluster: ClusterDef, env: Map[String, String], steps: Seq[JobStep]): RunJobFlowResponse = {
+    def createCluster(cluster: ClusterDef, env: Map[String, String]/*, job: Job*/): RunJobFlowResponse = {
       val bootstrapConfigs = cluster.bootstrapScripts.map(_.config)
-      val allSteps = cluster.bootstrapSteps ++ steps
+      val allSteps = cluster.bootstrapSteps// ++ job.steps
       val logUri = s"s3://$logBucket/logs/${cluster.name}"
       var configurations = cluster.applicationConfigurations
 
@@ -78,37 +78,33 @@ object Emr extends LazyLogging {
       client.runJobFlow(request)
     }
 
-    /** Gets the current state of a cluster. It's either Left with the step that failed or
-      * Right with a list of all the steps completed or running/pending.
+    /** Returns the list of completed and active steps on the cluster. If any
+      * steps failed, it will throw an exception.
       */
-    def clusterState(cluster: RunJobFlowResponse): Either[StepSummary, List[StepSummary]] = {
-      val req = ListStepsRequest.builder.clusterId(cluster.jobFlowId).build
-      val steps = Utils.awsRetry() {
-        client.listStepsPaginator(req).steps.asScala
-      }
+    def clusterStatus(cluster: RunJobFlowResponse, stepIds: Seq[String]): (Array[String], Array[String]) = {
+      var completed = Array.empty[String]
+      var active = Array.empty[String]
 
-      // either left (failed step) or right (all steps)
-      steps.foldLeft(Right(List.empty): Either[StepSummary, List[StepSummary]]) {
-        case (Left(step), _) => Left(step)
-        case (_, step) if step.status.state == StepState.FAILED => Left(step)
-        case (_, step) if step.status.state == StepState.CANCELLED => Left(step)
-        case (Right(steps), step) => Right(steps :+ step)
-      }
-    }
-
-    /** Adds additional steps to an already existing cluster.
-      */
-    def addStepsToCluster(cluster: RunJobFlowResponse, steps: Seq[JobStep]): AddJobFlowStepsResponse = {
-      val req = AddJobFlowStepsRequest.builder
-        .jobFlowId(cluster.jobFlowId)
-        .steps(steps.map(_.config).asJava)
+      // create the request for just the active steps
+      val req = ListStepsRequest.builder
+        .clusterId(cluster.jobFlowId)
+        .stepIds(stepIds.asJava)
         .build
 
-      // get the list of steps added
-      client.addJobFlowSteps(req)
+      // get the status of those steps
+      for (step <- client.listStepsPaginator(req).steps.asScala) {
+        step.status.state match {
+          case StepState.FAILED => throw new Exception(step.status.stateChangeReason.message)
+          case StepState.COMPLETED => completed +:= step.id
+          case StepState.PENDING | StepState.RUNNING => active +:= step.id
+          case _ => ()
+        }
+      }
+
+      (completed, active)
     }
 
-    /** Terminate a cluster.
+    /** Terminate any running clusters.
       */
     def terminateClusters(clusters: Seq[RunJobFlowResponse]): Unit = {
       val flowIds = clusters.map(_.jobFlowId).asJava
@@ -118,104 +114,125 @@ object Emr extends LazyLogging {
       ()
     }
 
-    /** Spin up a set of clusters from a definition along with a set of jobs
-      * that need to run (in any order!). As a cluster becomes available
-      * steps from the various jobs will be sent to it for running.
+    /** Spin up maxParallel clusters in order to execute jobs.
+      *
+      * The jobs are shuffled and grouped to clusters in a round-robin fashion. This
+      * is done so that any pathological grouping of jobs that take a long time to
+      * complete won't be paired together on the same cluster every time.
+      *
+      * Once the jobs are assigned to a cluster, the cluster is spun created with an
+      * initial set of steps and then the remaining steps are added afterwards. AWS
+      * only allows a cluster to be created with a limited number of steps.
+      *
+      * This function waits until all steps are completed before returning. This is
+      * because AWS limits how many steps can be active on a cluster at one time. For
+      * this reason, we need to periodically poll and queue more steps when a cluster
+      * is able to receive them.
       */
-    def runJobs(cluster: ClusterDef, env: Map[String, String], jobs: Seq[Seq[JobStep]], pendingBatchSize: Int = 2, maxParallel: Int = 5): Unit = {
-      val jobList = Random.shuffle(jobs).toList
+    def runJobs(cluster: ClusterDef, env: Map[String, String], jobs: Seq[Job], maxParallel: Int = 5): Unit = {
+      val allJobs = jobs.flatMap {
+        case job if job.isParallel => job.steps.map(new Job(_))
+        case job                   => Seq(job)
+      }
 
-      // determine the initial jobs to spin up each cluster with
-      val (initialJobs, remainingJobs) = jobList.splitAt(maxParallel)
+      // this is an AWS limit in place when polling the status of steps
+      val maxActiveSteps = 10
+      val nClusters = allJobs.size.min(maxParallel)
+      val totalSteps = jobs.flatMap(_.steps).size + (cluster.bootstrapSteps.size * nClusters)
 
-      // create a cluster for each initial, parallel job
-      val clusters = initialJobs.map(job => createCluster(cluster, env, job))
+      // indicate how many jobs are being distributed across clusters
+      logger.info(s"Creating $nClusters clusters for ${jobs.size} jobs...")
 
-      // calculate the total number of steps (including bootstrap steps)
-      val totalSteps = jobList.flatten.size + (cluster.bootstrapSteps.size * clusters.size)
+      // spin up clusters
+      val clusters = for (_ <- 1 to nClusters) yield {
+        createCluster(cluster, env)
+      }
 
-      // queue of the remaining jobs and count of completed steps
-      var jobQueue = remainingJobs
-      var lastStepsCompleted = 0
+      // clusters are now running
+      logger.info("Clusters launched.")
 
-      // the initial poll period is about how long it takes to provision a cluster
-      val maxPollPeriod = 5.minutes
-      var pollPeriod = maxPollPeriod
+      /* At this point we evenly divide all the jobs among the clusters and then
+       * flatten the steps. Each cluster (by index) will have its own array of
+       * steps that can be taken from and updated in order to add them to the
+       * cluster when it has available step space.
+       */
+      val stepQueue = LazyList.continually(clusters)
+        .flatten
+        .zip(Random.shuffle(allJobs))
+        .groupMap(_._1)(_._2)
+        .toArray
+        .map(_._2.flatMap(_.steps).toList)
 
-      // indicate how many steps are being distributed across clusters
-      logger.info(s"${clusters.size} job flows created; $totalSteps steps")
+      /* Steps taken from the stepQueue and added to a cluster have their step ids
+       * added to a parallel array for each cluster. This is so only the status of
+       * those steps can be checked, as the number of steps in a cluster can grow
+       * quite large.
+       */
+      val stepIds = clusters.map(_ => Array.empty[String]).toArray
 
-      // loop until all jobs are complete
-      try {
-        val startTime = System.currentTimeMillis
+      // run the jobs
+      val runResult = Try {
+        var lastStepsCompleted = -1
+        var stepsCompleted = 0
 
+        // loop forever, waiting for all steps to complete
         while (lastStepsCompleted < totalSteps) {
-          // wait between cluster polling so we don't hit the AWS limit
-          Thread.sleep(pollPeriod.toMillis)
+          Thread.sleep(5.minutes.toMillis)
 
-          // reset the poll period back to the maximum
-          pollPeriod = maxPollPeriod
+          // get the step status of each cluster
+          for ((cluster, i) <- clusters.zipWithIndex) {
+            val (completedIds, activeIds) = clusterStatus(cluster, stepIds(i).toIndexedSeq)
 
-          // update the progress of each cluster
-          val progress = for (cluster <- clusters) yield {
-            clusterState(cluster) match {
-              case Left(failedStep) => throw new Exception(s"Job failed (step ${failedStep.id}); see: https://console.aws.amazon.com/elasticmapreduce/home?region=us-east-1#cluster-details:${cluster.jobFlowId}")
-              case Right(steps) =>
-                val pending = steps.count(_.status.state == StepState.PENDING)
+            // update the list of steps to watch to only the active ones
+            stepIds(i) = activeIds
 
-                // reduce the poll period to the minimum number of steps being waited on
-                pollPeriod = pollPeriod.toMinutes.min(pending + 1).minutes
+            // if there are too few active steps, pull steps from the queue
+            if (activeIds.length < maxActiveSteps && stepQueue(i).nonEmpty) {
+              val (stepsToAdd, stepsRemaining) = stepQueue(i).splitAt(maxActiveSteps - activeIds.length)
+              val req = AddJobFlowStepsRequest.builder
+                .jobFlowId(cluster.jobFlowId)
+                .steps(stepsToAdd.map(_.config).asJava)
+                .build
 
-                // always keep steps pending in the cluster, but keep entire jobs together
-                if (pending < pendingBatchSize && jobQueue.nonEmpty) {
-                  val n = ((pendingBatchSize - pending) / jobQueue.head.size).max(1)
+              // add the steps to the cluster
+              val response = client.addJobFlowSteps(req)
 
-                  // take as many jobs as needed to reach pending size
-                  val (jobs, rest) = jobQueue.splitAt(n)
+              // add new step ids to the set of active steps for this cluster
+              if (response.hasStepIds) {
+                stepIds(i) ++= response.stepIds.asScala
+              }
 
-                  // add multiple steps per request to ensure rate limit isn't exceeded
-                  addStepsToCluster(cluster, jobs.flatten)
-                  jobQueue = rest
-                }
-
-                // count the completed steps
-                steps.count(_.status.state == StepState.COMPLETED)
+              // update the step queue for this cluster
+              stepQueue(i) = stepsRemaining
             }
+
+            // add the newly completed steps
+            stepsCompleted += completedIds.length
           }
 
-          // get the total number of completed steps
-          val stepsCompleted = progress.sum
-
-          // log any updated progress
+          // update the progress log
           if (stepsCompleted > lastStepsCompleted) {
-            val pct = stepsCompleted * 100 / totalSteps
-            val elapsed = (System.currentTimeMillis - startTime).milliseconds
+            logger.info(s"Job queue progress: $stepsCompleted/$totalSteps steps (${stepsCompleted * 100 / totalSteps}%)")
 
-            // calculate a pretty string for estimated time remaining
-            val timeLeft = elapsed * (totalSteps - stepsCompleted) / stepsCompleted match {
-              case d if d > 1.day    => d.toDays.days.toString
-              case d if d > 1.hour   => d.toHours.hours.toString
-              case d if d > 1.minute => d.toMinutes.minutes.toString
-              case d                 => d.toSeconds.seconds.toString
-            }
-
-            // update the current progress
-            logger.info(s"Job queue progress: $stepsCompleted/$totalSteps steps ($pct%); est. $timeLeft remaining")
+            // update the total number of steps completed
             lastStepsCompleted = stepsCompleted
           }
         }
       }
 
-      // always ensure the clusters are terminated
-      finally {
-        terminateClusters(clusters)
+      // always terminate all clusters
+      terminateClusters(clusters)
+
+      // on a failure, throw the exception
+      runResult match {
+        case Success(_) => ()
+        case Failure(ex) => throw ex
       }
     }
 
-    /** Helper: create a single job.
-      */
-    def runJob(cluster: ClusterDef, env: Map[String, String], steps: JobStep*): Unit = {
-      runJobs(cluster, env, Seq(steps))
+    /** Helper: create a single job. */
+    def runJob(cluster: ClusterDef, env: Map[String, String], job: Job): Unit = {
+      runJobs(cluster, env, Seq(job))
     }
   }
 }

@@ -1,31 +1,33 @@
-package org.broadinstitute.dig.aws
+package org.broadinstitute.dig.aws.emr
 
-import software.amazon.awssdk.services.emr.model.ActionOnFailure
-import software.amazon.awssdk.services.emr.model.HadoopJarStepConfig
-import software.amazon.awssdk.services.emr.model.StepConfig
 import java.net.URI
+
+import org.broadinstitute.dig.aws.Implicits
+import software.amazon.awssdk.services.emr.model.{ActionOnFailure, HadoopJarStepConfig, StepConfig}
+
 import scala.jdk.CollectionConverters._
 
-/** All Hadoop jobs are a series of steps. */
-sealed abstract class JobStep {
-
-  /** Construct the EMR configuration for this step. */
-  def config: StepConfig
+/** Jobs are sequences of steps that are either run serially (default)
+  * or in parallel. Parallel jobs can have their steps distributed
+  * across multiple clusters when run.
+  */
+class Job(val steps: Seq[Job.Step], val isParallel: Boolean = false) {
+  def this(step: Job.Step) = this(Seq(step))
 }
 
-object JobStep {
+/** Companion object for jobs. */
+object Job {
   import Implicits._
 
-  /** Extract the name of a job from its URI. */
-  def toJobName(uri: URI): String = uri.basename.trim match {
-    case ""       => uri.toString
-    case nonEmpty => nonEmpty
+  /** All jobs are a series of steps. */
+  sealed trait Step {
+    def config: StepConfig
   }
 
   /** Create a new Map Reduce step given a JAR (S3 path) the main class to
     * run, and any command line arguments to pass along to the JAR.
     */
-  final case class MapReduce(jar: URI, mainClass: String, args: Seq[String]) extends JobStep {
+  final case class MapReduce(jar: URI, mainClass: String, args: Seq[String]) extends Step {
     override def config: StepConfig = {
       val jarConfig = HadoopJarStepConfig.builder
         .jar(jar.toString)
@@ -45,7 +47,7 @@ object JobStep {
     * AWS. This is used to spawn Spark, Pig, and more... see:
     * https://docs.aws.amazon.com/emr/latest/ReleaseGuide/emr-commandrunner.html
     */
-  final case class CommandRunner(name: String, args: Seq[String]) extends JobStep {
+  final case class CommandRunner(name: String, args: Seq[String]) extends Step {
     override def config: StepConfig = {
       val jarConfig = HadoopJarStepConfig.builder
         .jar("command-runner.jar")
@@ -63,7 +65,7 @@ object JobStep {
   /** Create Script Runner step that will execute a generic script... see:
     * https://docs.aws.amazon.com/emr/latest/ReleaseGuide/emr-hadoop-script.html
     */
-  final case class Script(script: URI, args: String*) extends JobStep {
+  final case class Script(script: URI, args: String*) extends Step {
     override def config: StepConfig = {
       val jarConfig = HadoopJarStepConfig.builder
         .jar("s3://us-east-1.elasticmapreduce/libs/script-runner/script-runner.jar")
@@ -71,7 +73,7 @@ object JobStep {
         .build
 
       StepConfig.builder
-        .name(toJobName(script))
+        .name(script.jobName)
         .actionOnFailure(ActionOnFailure.TERMINATE_CLUSTER)
         .hadoopJarStep(jarConfig)
         .build
@@ -84,7 +86,7 @@ object JobStep {
     val commandRunnerArgs = Seq("spark-submit", "--deploy-mode", "cluster", script.toString)
 
     // create a command runner
-    CommandRunner(toJobName(script), commandRunnerArgs ++ args)
+    CommandRunner(script.jobName, commandRunnerArgs ++ args)
   }
 
   /** Create a Command Runner step that will run a Pig script.
@@ -102,6 +104,6 @@ object JobStep {
     val file = List("-f", script.toString)
 
     // create the command runner
-    CommandRunner(toJobName(script), commandRunnerArgs ++ params ++ file)
+    CommandRunner(script.jobName, commandRunnerArgs ++ params ++ file)
   }
 }
