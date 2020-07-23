@@ -111,7 +111,7 @@ object Emr extends LazyLogging {
       val req = TerminateJobFlowsRequest.builder.jobFlowIds(flowIds).build
 
       client.terminateJobFlows(req)
-      ()
+      logger.info("Clusters terminated.")
     }
 
     /** Spin up maxParallel clusters in order to execute jobs.
