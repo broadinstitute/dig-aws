@@ -145,6 +145,21 @@ object Emr extends LazyLogging {
          * flatten the steps. Each cluster (by index) will have its own array of
          * steps that can be taken from and updated in order to add them to the
          * cluster when it has available step space.
+         *
+         * It's important that each cluster have its own queue instead of a single
+         * queue for all jobs because...
+         *
+         * 1. The steps of jobs need to be guaranteed to run serially, which means
+         *    they must run on the same cluster.
+         *
+         * 2. In order to appropriately poll and not break the AWS rate limit, we
+         *    need to always keep each cluster maximized to 10 steps. Jobs can have
+         *    any number of steps (e.g. > 10), which means we can't just take an
+         *    entire job from the queue and add it to the cluster.
+         *
+         * Ideally, there'd be a single queue for all jobs, and each cluster would
+         * have a queue of steps. If the cluster's step queue was low, it would take
+         * jobs from the job queue until it had enough steps in its queue.
          */
         val stepQueue = LazyList.continually(clusters)
           .flatten
