@@ -75,7 +75,10 @@ object S3 extends LazyLogging {
 
     /** Upload a resource to the bucket. */
     def putResource(key: String, resource: String): PutObjectResponse = {
-      put(key, Source.fromResource(resource).mkString)
+      Try(Source.fromResource(resource).mkString) match {
+        case Success(content) => put(key, content)
+        case Failure(_)       => throw new Exception(s"Failed to read resource: $resource")
+      }
     }
 
     /** Create a zero-byte file key in the bucket. */
