@@ -1,18 +1,17 @@
 package org.broadinstitute.dig.aws
 
+import org.broadinstitute.dig.aws._
 import org.broadinstitute.dig.aws.emr._
+import org.broadinstitute.dig.aws.emr.Job
 import org.scalatest.FunSuite
-import java.time.format.DateTimeFormatter
-import java.time.ZoneId
-import java.time.Instant
-import cats.effect.IO
 
 /**
  * @author clint
  * Jul 27, 2018
  */
 trait AwsFunSuite extends FunSuite {
-  protected def aws: Aws
+  protected def s3: S3.Bucket = new S3.Bucket("dig-integration-tests")
+  protected def emr: Emr.Runner
 
   def testWithPseudoDir(name: String)(body: String => Any): Unit = {
     test(name) {
@@ -20,7 +19,7 @@ trait AwsFunSuite extends FunSuite {
 
       val pseudoDirKey = s"integrationTests/${mungedName}"
 
-      def nukeTestDir() = aws.rmdir(s"${pseudoDirKey}/").unsafeRunSync()
+      def nukeTestDir(): Unit = s3.rm(s"${pseudoDirKey}/")
 
       nukeTestDir()
 
@@ -32,26 +31,26 @@ trait AwsFunSuite extends FunSuite {
     }
   }
 
-  def testWithPseudoDirIO[A](name: String)(body: String => IO[A]): Unit = {
-    testWithPseudoDir(name)(body(_).unsafeRunSync())
+  def testWithPseudoDirIO[A](name: String)(body: String => A): Unit = {
+    testWithPseudoDir(name)(body)
   }
 
   def testWithCluster(name: String, scriptResource: String): Unit = {
     test(name) {
-      val cluster = Cluster(
+      val cluster = ClusterDef(
         name = "IntegrationTest",
         instances = 1,
-        masterInstanceType = InstanceType.m5_2xlarge,
+        masterInstanceType = Ec2.Strategy.generalPurpose(),
       )
 
-      val ioa = for {
-        uri <- aws.upload(scriptResource)
-        job <- aws.runJob(cluster, JobStep.Script(uri))
-        res <- aws.waitForJob(job)
-      } yield ()
+      val key = s"resources/$scriptResource"
+      val put = s3.putResource(key, scriptResource)
+      val uri = s3.s3UriOf(key)
+      val step = Job.Script(uri)
+      val job = new Job(step)
+      val env = Map.empty[String, String]
 
-      // this will assert in waitForJob if there's an error
-      ioa.unsafeRunSync()
+      emr.runJob(cluster, env, job)
     }
   }
 }

@@ -89,7 +89,8 @@ object Emr extends LazyLogging {
       client.listStepsPaginator(req).steps.asScala.toArray.collect { step =>
         step.status.state match {
           case StepState.PENDING | StepState.RUNNING => step.id
-          case StepState.FAILED => throw new Exception(step.status.stateChangeReason.message)
+          case StepState.FAILED                      => throw new Exception(step.status.stateChangeReason.message)
+          case StepState.CANCELLED                   => throw new Exception("cancelled")
         }
       }
     }
