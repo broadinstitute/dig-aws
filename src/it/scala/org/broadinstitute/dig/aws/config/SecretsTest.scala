@@ -2,9 +2,6 @@ package org.broadinstitute.dig.aws.config
 
 import org.scalatest.FunSuite
 
-/**
- * @author jmassung
- */
 final class SecretsTest extends FunSuite {
   test("secrets") {
     val secret = Secrets.get[SecretsTest.TestSecret]("hello")

@@ -1,17 +1,19 @@
 package org.broadinstitute.dig.aws
 
+import com.typesafe.scalalogging.LazyLogging
+
 import java.net.URI
 import java.nio.file.{Files, NoSuchFileException, Path}
 
+import scala.collection.mutable.ListBuffer
 import scala.jdk.CollectionConverters._
 import scala.io.Source
 import scala.util.{Failure, Success, Try}
-import com.typesafe.scalalogging.LazyLogging
+
+import software.amazon.awssdk.core.ResponseInputStream
 import software.amazon.awssdk.core.sync.RequestBody
 import software.amazon.awssdk.services.s3.S3Client
 import software.amazon.awssdk.services.s3.model._
-
-import scala.collection.mutable.ListBuffer
 
 object S3 extends LazyLogging {
 
@@ -46,18 +48,18 @@ object S3 extends LazyLogging {
     }
 
     /** Get the head request of an object in the bucket. */
-    def head(key: String): GetObjectResponse = {
-      client.getObject(GetObjectRequest.builder.bucket(bucket).key(key).range("bytes=0-0").build).response
+    def head(key: String): ResponseInputStream[GetObjectResponse] = {
+      client.getObject(GetObjectRequest.builder.bucket(bucket).key(key).range("bytes=0-0").build)
     }
 
     /** Get an object in the bucket, returns a stream. */
-    def get(key: String): GetObjectResponse = {
-      client.getObject(GetObjectRequest.builder.bucket(bucket).key(key).build).response
+    def get(key: String): ResponseInputStream[GetObjectResponse] = {
+      client.getObject(GetObjectRequest.builder.bucket(bucket).key(key).build)
     }
 
     /** Extract the metadata for an object. */
     def getMetadata(key: String): Map[String, String] = {
-      head(key).metadata().asScala.toMap
+      head(key).response.metadata().asScala.toMap
     }
 
     /** Upload a string to the bucket. */

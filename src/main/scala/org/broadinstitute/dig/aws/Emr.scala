@@ -97,10 +97,11 @@ object Emr extends LazyLogging {
 
     /** Terminate a list of running clusters. */
     def terminateClusters(clusters: Seq[RunJobFlowResponse]): Unit = {
-      val flowIds = clusters.map(_.jobFlowId).asJava
-      val req = TerminateJobFlowsRequest.builder.jobFlowIds(flowIds).build
+      clusters.map(_.jobFlowId).sliding(10, 10).foreach { flowIds =>
+        val req = TerminateJobFlowsRequest.builder.jobFlowIds(flowIds.asJava).build
+        client.terminateJobFlows(req)
+      }
 
-      client.terminateJobFlows(req)
       logger.info("Clusters terminated.")
     }
 

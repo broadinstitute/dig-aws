@@ -1,6 +1,5 @@
 package org.broadinstitute.dig.aws
 
-import org.broadinstitute.dig.aws._
 import org.broadinstitute.dig.aws.emr._
 import org.broadinstitute.dig.aws.emr.Job
 import org.scalatest.FunSuite
@@ -10,16 +9,16 @@ import org.scalatest.FunSuite
  * Jul 27, 2018
  */
 trait AwsFunSuite extends FunSuite {
-  protected def s3: S3.Bucket = new S3.Bucket("dig-integration-tests")
+  protected def s3: S3.Bucket
   protected def emr: Emr.Runner
 
   def testWithPseudoDir(name: String)(body: String => Any): Unit = {
     test(name) {
       val mungedName = name.filter(_ != '/')
 
-      val pseudoDirKey = s"integrationTests/${mungedName}"
+      val pseudoDirKey = s"integrationTests/$mungedName"
 
-      def nukeTestDir(): Unit = s3.rm(s"${pseudoDirKey}/")
+      def nukeTestDir(): Unit = s3.rm(s"$pseudoDirKey/")
 
       nukeTestDir()
 

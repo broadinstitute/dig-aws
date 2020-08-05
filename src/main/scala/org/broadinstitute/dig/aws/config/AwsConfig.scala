@@ -26,4 +26,12 @@ object AwsConfig {
     source.close
     settings
   }
+
+  /** Load a JSON from a resource and parse it. */
+  def loadFromResource(resource: String): Try[AwsConfig] = Try {
+    val source = Source.fromResource(resource)
+    val settings = read[AwsConfig](source.mkString)
+
+    settings
+  }
 }
