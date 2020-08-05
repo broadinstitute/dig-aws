@@ -14,7 +14,7 @@ final class AwsTest extends AwsFunSuite {
   /**
     * Create a cluster and run a simple script job.
     */
-  testWithCluster("Simple Cluster", "test_script.py")
+  //testWithCluster("Simple Cluster", "test_script.py")
 
   /**
     * Create 1 non-pseudo-dir object and list it
@@ -46,6 +46,10 @@ final class AwsTest extends AwsFunSuite {
 
   /**
     * Create 2500 objects and list them
+    *
+    * NOTE: We do this many so we can test aws.ls and aws.rm looping/recursion
+    *       with the API returning only allowing a maximum number of keys to
+    *       be returned/acted upon at once.
     */
   testWithPseudoDirIO("PutLs2500") {
     doPutLsTest(2500)
@@ -90,7 +94,7 @@ final class AwsTest extends AwsFunSuite {
       s3.put(k, i.toString)
     }
 
-    val putKeys = s3.ls(pseudoDirKeyWithSlash)
+    val putKeys = s3.ls(pseudoDirKeyWithSlash).map(_.key)
 
     // ensure they are all there
     assert(expectedKeys.forall(putKeys.contains))
