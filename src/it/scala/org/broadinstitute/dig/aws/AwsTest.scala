@@ -14,7 +14,7 @@ final class AwsTest extends AwsFunSuite {
   /**
     * Create a cluster and run a simple script job.
     */
-  //testWithCluster("Simple Cluster", "test_script.py")
+  testWithCluster("Simple Cluster", "test_script.py")
 
   /**
     * Create 1 non-pseudo-dir object and list it
@@ -64,8 +64,10 @@ final class AwsTest extends AwsFunSuite {
     val key = s"$pseudoDirKey/${resource.stripPrefix("/")}"
 
     assert(s3.ls(key).isEmpty)
-    s3.put(resource, pseudoDirKey)
+    s3.putResource(key, resource)
     assert(s3.ls(key).nonEmpty)
+    s3.rm(key)
+    assert(s3.ls(key).isEmpty)
   }
   
   //Create one object and list it
