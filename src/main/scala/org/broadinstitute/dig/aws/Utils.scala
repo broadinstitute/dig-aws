@@ -1,29 +1,38 @@
 package org.broadinstitute.dig.aws
 
-import cats.effect._
-import cats.syntax.all._
-import fs2._
+import com.typesafe.scalalogging.LazyLogging
 
+import scala.annotation.tailrec
+import scala.concurrent.duration._
+import scala.util.{Failure, Success, Try}
 
-/** Utility functions. */
-object Utils {
-  /** Helper to allow performing an IO operation, but ignore the results. */
-  val ignoreIO: IO[_] => IO[Unit] = _.map(scala.Function.const(()))
+import software.amazon.awssdk.awscore.exception.AwsServiceException
+import software.amazon.awssdk.core.exception.SdkException
 
-  /** Given a sequence of IO tasks, run them in parallel, but limit the maximum
-    * concurrency so too many clusters aren't created at once.
-    *
-    * Optionally, apply a mapping function for each.
-    */
-  def waitForTasks[A, R](tasks: Seq[IO[A]], limit: Int = 5)
-                        (mapEach: IO[A] => IO[R] = ignoreIO)
-                        (implicit contextShift: ContextShift[IO] = Implicits.Defaults.contextShift): IO[Unit] = {
-    Stream
-      .emits(tasks)
-      .covary[IO]
-      .mapAsyncUnordered(limit)(mapEach)
-      .compile
-      .toList
-      .as(())
+/** Useful functions shared by all can go here. */
+object Utils extends LazyLogging {
+
+  /** Very simple retry with delay and backoff for retry-able AWS calls. */
+  @tailrec
+  def awsRetry[T](delay: FiniteDuration=1.minute, retries: Int = 10)(body: => T): T = {
+    Try(body) match {
+      case Success(x)                  => x
+      case Failure(ex) if retries == 0 => throw ex
+
+      // some classes of AWS exceptions can be retried
+      case Failure(ex) =>
+        ex match {
+          case ex : SdkException if ex.retryable()                  => ()
+          case ex : AwsServiceException if ex.isThrottlingException => ()
+          case _                                                    => throw ex
+        }
+
+        // warn about throttling and wait
+        logger.warn(s"AWS exception: $ex; retrying in $delay")
+        Thread.sleep(delay.toMillis)
+
+        // retry, with a longer delay if it fails again
+        awsRetry(delay + 1.minute, retries - 1)(body)
+    }
   }
 }

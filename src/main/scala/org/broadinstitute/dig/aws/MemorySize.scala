@@ -1,4 +1,4 @@
-package org.broadinstitute.dig.aws.emr
+package org.broadinstitute.dig.aws
 
 /** Memory units would be bytes, megabytes, gigabytes, etc. */
 abstract case class MemoryUnit(unit: String, unitsPerBytes: Int)
@@ -10,7 +10,7 @@ object GB extends MemoryUnit("g", 1024 * 1024 * 1024)
 
 /** Handles ApplicationConfig memory size strings for EMR clusters. */
 final case class MemorySize(size: Int, units: MemoryUnit) {
-  override val toString: String = s"${size}${units.unit}"
+  override val toString: String = s"$size${units.unit}"
 
   /** Convert from current units to bytes. */
   def toB: MemorySize = MemorySize(size * units.unitsPerBytes, B)

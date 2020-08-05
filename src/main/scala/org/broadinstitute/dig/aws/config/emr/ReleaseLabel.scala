@@ -12,13 +12,8 @@ final case class ReleaseLabel(value: String) {
   */
 object ReleaseLabel {
 
-  /** Default EMR instance versions. */
-  val emr_5_17_0: ReleaseLabel = ReleaseLabel("emr-5.17.0")
-  val emr_5_18_0: ReleaseLabel = ReleaseLabel("emr-5.18.0")
-  val emr_5_19_0: ReleaseLabel = ReleaseLabel("emr-5.19.0")
-
   /** Default EMR instance release version. */
-  val emrLatest: ReleaseLabel = emr_5_19_0
+  val emrLatest: ReleaseLabel = ReleaseLabel("emr-5.30.0")
 
   /** Convert a JSON value to an ReleaseLabel. */
   val deserialize: PartialFunction[JValue, ReleaseLabel] = {
@@ -31,7 +26,7 @@ object ReleaseLabel {
   }
 
   /** Custom serializer for ReleaseLabel. To use this, add it to the default
-    * formats when deserializing...
+    * formats when de-serializing...
     *
     * implicit val formats = json4s.DefaultFormats + ReleaseLabel.Serializer
     */

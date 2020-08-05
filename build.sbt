@@ -1,16 +1,12 @@
 lazy val Versions = new {
-  val Aws              = "2.11.12"
-  val Cats             = "1.5.0"
-  val CatsEffect       = "1.1.0"
-  val Janino           = "3.0.8"
+  val Aws              = "2.13.56"
+  val Janino           = "3.1.2"
   val LogbackClassic   = "1.2.3"
   val LogbackColorizer = "1.0.1"
-  val Scala            = "2.12.10"
-  val ScalaLogging     = "3.7.2"
+  val Scala            = "2.13.2"
+  val ScalaLogging     = "3.9.2"
   val ScalaTest        = "3.0.8"
-  val Slf4J            = "1.7.25"
-  val Json4s           = "3.5.3"
-  val Fs2              = "1.0.1"
+  val Json4s           = "3.6.8"
   val TypesafeConfig   = "1.3.4"
   val Ficus            = "1.4.7"
 }
@@ -23,23 +19,19 @@ lazy val scalacOpts = Seq(
   "-feature",
   "-deprecation",
   "-unchecked",
-  "-Ypartial-unification",
   "-Ywarn-value-discard"
 )
 
 lazy val mainDeps = Seq(
+  "software.amazon.awssdk"         % "ec2"                  % Versions.Aws,
   "software.amazon.awssdk"         % "emr"                  % Versions.Aws,
   "software.amazon.awssdk"         % "s3"                   % Versions.Aws,
-  "software.amazon.awssdk"         % "ec2"                  % Versions.Aws,
   "software.amazon.awssdk"         % "secretsmanager"       % Versions.Aws,
   "com.typesafe.scala-logging"     %% "scala-logging"       % Versions.ScalaLogging,
   "ch.qos.logback"                 % "logback-classic"      % Versions.LogbackClassic,
   "org.codehaus.janino"            % "janino"               % Versions.Janino,
   "org.tuxdude.logback.extensions" % "logback-colorizer"    % Versions.LogbackColorizer,
-  "org.typelevel"                  %% "cats-core"           % Versions.Cats,
-  "org.typelevel"                  %% "cats-effect"         % Versions.CatsEffect,
   "org.json4s"                     %% "json4s-jackson"      % Versions.Json4s,
-  "co.fs2"                         %% "fs2-core"            % Versions.Fs2,
   "com.typesafe"                   % "config"               % Versions.TypesafeConfig,
   "com.iheart"                     %% "ficus"               % Versions.Ficus,
 )
@@ -60,14 +52,17 @@ lazy val root = (project in file("."))
     libraryDependencies ++= (mainDeps ++ testDeps)
   )
 
-//Make integration tests run serially.
+// make integration tests run serially.
 parallelExecution in IntegrationTest := false
 
-//Show full stack traces from unit and integration tests (F); display test run times (D)
+// don't run scaladoc when publishing locally
+publishArtifact in (Compile, packageDoc) := false
+
+// show full stack traces from unit and integration tests (F); display test run times (D)
 testOptions in IntegrationTest += Tests.Argument("-oFD")
 testOptions in Test += Tests.Argument("-oFD")
 
-//Enables `buildInfoTask`, which bakes git version info into the LS jar.
+// enables `buildInfoTask`, which bakes git version info into the LS jar.
 enablePlugins(GitVersioning)
 
 val buildInfoTask = taskKey[Seq[File]]("buildInfo")

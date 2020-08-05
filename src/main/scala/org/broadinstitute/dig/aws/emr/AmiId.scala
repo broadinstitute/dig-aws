@@ -27,7 +27,7 @@ object AmiId {
   }
 
   /** Custom serializer for AmiId. To use this, add it to the default
-    * formats when deserializing...
+    * formats when de-serializing...
     *
     * implicit val formats = json4s.DefaultFormats + AmiId.Serializer
     */

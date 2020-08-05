@@ -3,7 +3,6 @@ package org.broadinstitute.dig.aws
 import org.scalatest.FunSuite
 import java.time.Instant
 import java.io.StringReader
-import org.scalactic.source.Position.apply
 
 /**
  * @author clint

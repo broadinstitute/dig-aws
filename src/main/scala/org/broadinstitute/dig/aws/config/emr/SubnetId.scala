@@ -24,7 +24,7 @@ object SubnetId {
   }
 
   /** Custom serializer for SubnetId. To use this, add it to the default
-    * formats when deserializing...
+    * formats when de-serializing...
     *
     * implicit val formats = json4s.DefaultFormats + SubnetId.Serializer
     */
