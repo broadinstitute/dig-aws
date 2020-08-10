@@ -1,9 +1,7 @@
 package org.broadinstitute.dig.aws.emr
 
-import org.broadinstitute.dig.aws.MemorySize
 import org.broadinstitute.dig.aws.Ec2.Strategy
 import org.broadinstitute.dig.aws.emr.configurations.Configuration
-
 import software.amazon.awssdk.services.emr.model.EbsBlockDeviceConfig
 import software.amazon.awssdk.services.emr.model.EbsConfiguration
 import software.amazon.awssdk.services.emr.model.InstanceGroupConfig
@@ -16,6 +14,7 @@ import software.amazon.awssdk.services.emr.model.VolumeSpecification
 final case class ClusterDef(
     name: String,
     amiId: Option[AmiId] = None, //AmiId.amazonLinux_2018_3,
+    releaseLabel: ReleaseLabel = ReleaseLabel.emrDefault,
     instances: Int = 3,
     masterInstanceType: Strategy = Strategy.default,
     slaveInstanceType: Strategy = Strategy.default,
@@ -81,7 +80,6 @@ object ClusterDef {
     ApplicationName.hadoop,
     ApplicationName.spark,
     ApplicationName.hive,
-    ApplicationName.pig,
     ApplicationName.hue
   )
 }

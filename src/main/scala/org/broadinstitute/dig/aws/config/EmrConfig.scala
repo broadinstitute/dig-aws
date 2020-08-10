@@ -9,7 +9,6 @@ import org.json4s._
 final case class EmrConfig(
     sshKeyName: String,
     subnetId: SubnetId,
-    releaseLabel: ReleaseLabel = ReleaseLabel.emrLatest,
     securityGroupIds: Seq[SecurityGroupId] = Seq(),
     serviceRoleId: RoleId = RoleId.defaultRole,
     jobFlowRoleId: RoleId = RoleId.ec2DefaultRole,
@@ -26,7 +25,6 @@ object EmrConfig {
     * implicit val formats = json4s.DefaultFormats ++ EmrConfig.customSerializers
     */
   val customSerializers: Seq[CustomSerializer[_]] = Seq(
-    ReleaseLabel.Serializer,
     RoleId.Serializer,
     SecurityGroupId.Serializer,
     SubnetId.Serializer,

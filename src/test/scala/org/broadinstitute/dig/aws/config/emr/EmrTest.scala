@@ -3,7 +3,7 @@ package org.broadinstitute.dig.aws.config.emr
 import org.broadinstitute.dig.aws.config.EmrConfig
 
 import scala.util.Try
-import org.broadinstitute.dig.aws.emr.{AmiId, ClusterDef}
+import org.broadinstitute.dig.aws.emr.{AmiId, ClusterDef, ReleaseLabel}
 import org.json4s.DefaultFormats
 import org.json4s.jackson.Serialization.read
 import org.json4s.jackson.Serialization.write

@@ -56,7 +56,7 @@ object Emr extends LazyLogging {
         .bootstrapActions(bootstrapConfigs.asJava)
         .applications(cluster.applications.map(_.application).asJava)
         .configurations(configurations.map(_.build).asJava)
-        .releaseLabel(config.releaseLabel.value)
+        .releaseLabel(cluster.releaseLabel.value)
         .serviceRole(config.serviceRoleId.value)
         .jobFlowRole(config.jobFlowRoleId.value)
         .autoScalingRole(config.autoScalingRoleId.value)
