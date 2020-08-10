@@ -50,10 +50,6 @@ final class EmrTest extends FunSuite {
     testSerialize[AmiId](AmiId.apply, "ami-123456", "amiXXX-123456")
   }
 
-  test("emr types - ReleaseLabel") {
-    testSerialize[ReleaseLabel](ReleaseLabel.apply, "emr-x.x.x", "emrXXX-x.x.x")
-  }
-
   test("emr types - RoleId") {
     testSerialize[RoleId](RoleId.apply, "some-silly-role-id")
   }
