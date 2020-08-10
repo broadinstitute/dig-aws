@@ -1,7 +1,5 @@
 package org.broadinstitute.dig.aws.emr
 
-import org.json4s._
-
 /** The version ID of the EMR cluster to create.
   */
 final case class ReleaseLabel(value: String) {
