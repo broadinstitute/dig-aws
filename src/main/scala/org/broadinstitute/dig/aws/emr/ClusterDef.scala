@@ -25,6 +25,7 @@ final case class ClusterDef(
     bootstrapScripts: Seq[BootstrapScript] = Seq.empty,
     bootstrapSteps: Seq[Job.Step] = Seq.empty,
     visibleToAllUsers: Boolean = true,
+    stepConcurrency: Integer = 1
 ) {
   require(name.matches("[A-Za-z_]+[A-Za-z0-9_]*"), s"Illegal cluster name: $name")
   require(instances >= 1)
