@@ -22,6 +22,16 @@ object Job {
   /** All jobs are a series of steps. */
   sealed trait Step {
     def config: StepConfig.Builder
+
+    /** Build the configuration for this step using a cluster definition. */
+    def build(cluster: ClusterDef): StepConfig = {
+      val action = cluster.stepConcurrency match {
+        case n if n == 1 => ActionOnFailure.TERMINATE_CLUSTER
+        case _           => ActionOnFailure.CONTINUE
+      }
+
+      config.actionOnFailure(action).build
+    }
   }
 
   /** Create a new Map Reduce step given a JAR (S3 path) the main class to
