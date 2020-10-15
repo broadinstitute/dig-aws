@@ -7,11 +7,11 @@ import software.amazon.awssdk.services.emr.model.{ActionOnFailure, HadoopJarStep
 
 import scala.jdk.CollectionConverters._
 
-/** Jobs are sequences of steps that are either run serially (default)
-  * or in parallel. Parallel jobs can have their steps distributed
-  * across multiple clusters when run.
+/** Jobs are sequences of steps that are run serially. If `parallelSteps`
+  * is true, then the steps can be run in parallel and across multiple
+  * machines.
   */
-class Job(val steps: Seq[Job.Step]) {
+class Job(val steps: Seq[Job.Step], val parallelSteps: Boolean = false) {
   def this(step: Job.Step) = this(Seq(step))
 }
 
@@ -24,11 +24,8 @@ object Job {
     def config: StepConfig.Builder
 
     /** Build the configuration for this step using a cluster definition. */
-    def build(cluster: ClusterDef): StepConfig = {
-      val action = cluster.stepConcurrency match {
-        case n if n == 1 => ActionOnFailure.TERMINATE_CLUSTER
-        case _           => ActionOnFailure.CONTINUE
-      }
+    def build(terminateOnFailure: Boolean): StepConfig = {
+      val action = if (terminateOnFailure) ActionOnFailure.TERMINATE_CLUSTER else ActionOnFailure.CONTINUE
 
       config.actionOnFailure(action).build
     }

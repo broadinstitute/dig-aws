@@ -12,7 +12,6 @@ import scala.util.{Failure, Random, Success, Try}
 
 import software.amazon.awssdk.services.emr.EmrClient
 import software.amazon.awssdk.services.emr.model.{
-  ActionOnFailure,
   AddJobFlowStepsRequest,
   JobFlowInstancesConfig,
   ListStepsRequest,
@@ -39,9 +38,13 @@ object Emr extends LazyLogging {
       val bootstrapConfigs = clusterDef.bootstrapScripts.map(_.config)
       val logUri           = s"s3://$logBucket/logs/${clusterDef.name}"
       var configurations   = clusterDef.applicationConfigurations
+      var stepConcurrency = clusterDef.stepConcurrency
 
-      // Cannot run bootstrap steps in parallel with other steps!!
-      require(clusterDef.stepConcurrency == 1 || clusterDef.bootstrapSteps.isEmpty)
+      // cannot run bootstrap steps in parallel with other steps!!
+      if (clusterDef.bootstrapSteps.nonEmpty && stepConcurrency > 1) {
+        logger.warn("Bootstrap steps cannot run concurrently; disabling step concurrency")
+        stepConcurrency = 1
+      }
 
       // add environment variables both yarn (for PySpark) and hadoop (for Scripts)
       for (export <- Seq("yarn-env", "hadoop-env")) {
@@ -74,8 +77,8 @@ object Emr extends LazyLogging {
         .visibleToAllUsers(clusterDef.visibleToAllUsers)
         .logUri(logUri)
         .instances(instances)
-        .steps(clusterDef.bootstrapSteps.map(_.build(clusterDef)).asJava)
-        .stepConcurrencyLevel(clusterDef.stepConcurrency)
+        .steps(clusterDef.bootstrapSteps.map(_.build(true)).asJava)
+        .stepConcurrencyLevel(stepConcurrency)
 
       // use a custom AMI
       val requestBuilder = clusterDef.amiId match {
@@ -134,15 +137,15 @@ object Emr extends LazyLogging {
       */
     def runJobs(clusterDef: ClusterDef, env: Map[String, String], jobs: Seq[Job], maxParallel: Int = 5): Unit = {
       val allJobs = jobs.flatMap {
-        case job if clusterDef.stepConcurrency > 1 => job.steps.map(new Job(_))
-        case job                                => Seq(job)
+        case job if job.parallelSteps => job.steps.map(new Job(_))
+        case job                      => Seq(job)
       }
 
       // this is an AWS limit in place when polling the status of steps
       val maxActiveSteps     = 10
       val nClusters          = allJobs.size.min(maxParallel)
       val totalSteps         = jobs.flatMap(_.steps).size
-      val terminateOnFailure = clusterDef.stepConcurrency == 1
+      val terminateOnFailure = clusterDef.stepConcurrency == 1 || clusterDef.bootstrapSteps.nonEmpty
 
       // indicate how many jobs are being distributed across clusters
       logger.info(s"Creating $nClusters clusters for ${jobs.size} jobs...")
@@ -211,7 +214,7 @@ object Emr extends LazyLogging {
               val (stepsToAdd, stepsRemaining) = stepQueue(i).splitAt(n)
 
               // get the step configurations
-              val stepConfigs = stepsToAdd.map(_.build(clusterDef))
+              val stepConfigs = stepsToAdd.map(_.build(terminateOnFailure))
 
               // create the add steps request
               val req = AddJobFlowStepsRequest.builder
