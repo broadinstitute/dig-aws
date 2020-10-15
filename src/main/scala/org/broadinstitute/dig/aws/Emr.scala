@@ -40,6 +40,9 @@ object Emr extends LazyLogging {
       val logUri           = s"s3://$logBucket/logs/${clusterDef.name}"
       var configurations   = clusterDef.applicationConfigurations
 
+      // Cannot run bootstrap steps in parallel with other steps!!
+      require(clusterDef.stepConcurrency == 1 || clusterDef.bootstrapSteps.isEmpty)
+
       // add environment variables both yarn (for PySpark) and hadoop (for Scripts)
       for (export <- Seq("yarn-env", "hadoop-env")) {
         configurations.find(_.classification == export) match {
