@@ -7,17 +7,22 @@ import software.amazon.awssdk.services.emr.model.ScriptBootstrapActionConfig
 
 import org.broadinstitute.dig.aws.Implicits
 
+import scala.jdk.CollectionConverters._
+
 /** A bootstrap script is a script in S3 that can be run by the cluster during
   * initialization (used to install software, create directories, etc).
   *
   * Optionally, it's allowed for the script to only run on the master node.
   */
-class BootstrapScript(uri: URI) {
+class BootstrapScript(uri: URI, args: String*) {
   import Implicits.RichURI
 
   /** Create a simple action configuration for this bootstrap action. */
   protected def action: ScriptBootstrapActionConfig = {
-    ScriptBootstrapActionConfig.builder.path(uri.toString).build
+    ScriptBootstrapActionConfig.builder
+      .path(uri.toString)
+      .args(args.asJava)
+      .build
   }
 
   /** Create the configuration for the action to be used in cluster creation. */
