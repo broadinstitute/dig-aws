@@ -10,6 +10,7 @@ import scala.concurrent.duration._
 import scala.jdk.CollectionConverters._
 import scala.util.{Failure, Random, Success, Try}
 
+import software.amazon.awssdk.awscore.exception.AwsServiceException
 import software.amazon.awssdk.services.emr.EmrClient
 import software.amazon.awssdk.services.emr.model.{
   AddJobFlowStepsRequest,
@@ -38,7 +39,7 @@ object Emr extends LazyLogging {
       val bootstrapConfigs = clusterDef.bootstrapScripts.map(_.config)
       val logUri           = s"s3://$logBucket/logs/${clusterDef.name}"
       var configurations   = clusterDef.applicationConfigurations
-      var stepConcurrency = clusterDef.stepConcurrency
+      var stepConcurrency  = clusterDef.stepConcurrency
 
       // cannot run bootstrap steps in parallel with other steps!!
       if (clusterDef.bootstrapSteps.nonEmpty && stepConcurrency > 1) {
@@ -159,25 +160,30 @@ object Emr extends LazyLogging {
       val runResult = Try {
         logger.info("Clusters launched.")
 
-        /* At this point we evenly divide all the jobs among the clusters and then
-         * flatten the steps. Each cluster (by index) will have its own array of
-         * steps that can be taken from and updated in order to add them to the
-         * cluster when it has available step space.
+        /* At this point we evenly divide all the jobs among the clusters and
+         * then flatten the steps. Each cluster (by index) will have its own
+         * array of steps that can be taken from and updated in order to add
+         * them to the cluster when it has available step space.
          *
-         * It's important that each cluster have its own queue instead of a single
-         * queue for all jobs because...
+         * It's important that each cluster have its own queue instead of a
+         * single queue for all jobs because...
          *
-         * 1. The steps of jobs need to be guaranteed to run serially, which means
-         *    they must run on the same cluster.
+         * 1. The steps of jobs need to be guaranteed to run serially, which
+         *    means they must run on the same cluster.
          *
-         * 2. In order to appropriately poll and not break the AWS rate limit, we
-         *    need to always keep each cluster maximized to 10 steps. Jobs can have
-         *    any number of steps (e.g. > 10), which means we can't just take an
-         *    entire job from the queue and add it to the cluster.
+         * 2. In order to appropriately poll and not break the AWS rate limit,
+         *    we need to always keep each cluster maximized to 10 steps. Jobs
+         *    can have any number of steps (e.g. > 10), which means we can't
+         *    just take an entire job from the queue and add it to the cluster.
          *
-         * Ideally, there'd be a single queue for all jobs, and each cluster would
-         * have a queue of steps. If the cluster's step queue was low, it would take
-         * jobs from the job queue until it had enough steps in its queue.
+         * Ideally, there'd be a single queue for all jobs, and each cluster
+         * would have both a queue of jobs and a queue of steps. If the step
+         * queue of the cluster was low, it would pull a job from the job queue
+         * and the job's steps would be added to the step queue until it was
+         * ready to continue. This would alleviate the current problem of some
+         * jobs taking considerably longer than others, causing some clusters
+         * at the end to be sitting idle, doing nothing, while there are others
+         * with jobs still pending.
          */
         val stepQueue = LazyList
           .continually(clusters)
@@ -200,56 +206,93 @@ object Emr extends LazyLogging {
 
         // loop until all step queues and active step arrays are empty
         while (stepQueue.exists(_.nonEmpty) || activeSteps.exists(_.nonEmpty)) {
-          Thread.sleep(5.minutes.toMillis)
 
-          // get the step status of each cluster
-          for ((cluster, i) <- clusters.zipWithIndex) {
-            if (activeSteps(i).nonEmpty) {
-              activeSteps(i) = clusterStatus(cluster, activeSteps(i).toIndexedSeq)
-            }
+          /* AWS rate limits their API. However, it appears as though this rate
+           * limit is computed. This means that if (for example) the rate limit
+           * is 300 requests per minute, then that's 5 requests per second. If
+           * we make 6 requests in a second - even if we don't exceed the 300
+           * requests per minute, AWS will reject the request and cause us to
+           * throw an exception. For this reason, we have a few options:
+           *
+           *  1. Sleep between polls of all clusters.
+           *  2. Sleep between polls of each individual cluster.
+           *  3. Sleep between rate limit exceptions.
+           *
+           * Option (1) would mean "sleep for X minutes, then iterate over the
+           * clusters and poll them". This is fine until the number of clusters
+           * is above an unknown threshold at which point the rate limit is
+           * exceeded.
+           *
+           * Option (2) would mean "iterate over the clusters, sleeping between
+           * each iteration". This has the issue that if the delay and number
+           * of clusters is high enough, the delay between polling each cluster
+           * could be higher than with option (1).
+           *
+           * Option (3) means polling as often as possible, but when AWS fails
+           * due to a rate limit error, sleep for X amount of time before we
+           * continue polling again.
+           *
+           * None of these options are mutually exclusive.
+           */
 
-            // if there are too few active steps, pull steps from the queue
-            if (activeSteps(i).length < maxActiveSteps && stepQueue(i).nonEmpty) {
-              val n                            = maxActiveSteps - activeSteps(i).length
-              val (stepsToAdd, stepsRemaining) = stepQueue(i).splitAt(n)
+          try {
+            //Thread.sleep(5.minutes.toMillis) // option (1)
 
-              // get the step configurations
-              val stepConfigs = stepsToAdd.map(_.build(terminateOnFailure))
+            for ((cluster, i) <- clusters.zipWithIndex) {
+              Thread.sleep(10.seconds.toMillis) // option (2)
 
-              // create the add steps request
-              val req = AddJobFlowStepsRequest.builder
-                .jobFlowId(cluster.jobFlowId)
-                .steps(stepConfigs.asJava)
-                .build
-
-              // add the steps to the cluster
-              val response = client.addJobFlowSteps(req)
-
-              // add new step ids to the set of active steps for this cluster
-              if (response.hasStepIds) {
-                activeSteps(i) ++= response.stepIds.asScala
+              // poll the cluster status only only if there are active steps
+              if (activeSteps(i).nonEmpty) {
+                activeSteps(i) = clusterStatus(cluster, activeSteps(i).toIndexedSeq)
               }
 
-              // update the step queue for this cluster
-              stepQueue(i) = stepsRemaining
+              // if there are too few active steps, pull steps from the queue
+              if (activeSteps(i).length < maxActiveSteps && stepQueue(i).nonEmpty) {
+                val n                            = maxActiveSteps - activeSteps(i).length
+                val (stepsToAdd, stepsRemaining) = stepQueue(i).splitAt(n)
+
+                // get the step configurations
+                val stepConfigs = stepsToAdd.map(_.build(terminateOnFailure))
+
+                // create the add steps request
+                val req = AddJobFlowStepsRequest.builder
+                  .jobFlowId(cluster.jobFlowId)
+                  .steps(stepConfigs.asJava)
+                  .build
+
+                // add the steps to the cluster
+                val response = client.addJobFlowSteps(req)
+
+                // add new step ids to the set of active steps for this cluster
+                if (response.hasStepIds) {
+                  activeSteps(i) ++= response.stepIds.asScala
+                }
+
+                // update the step queue for this cluster
+                stepQueue(i) = stepsRemaining
+              }
             }
-          }
 
-          /* The number of completed steps is the total number of steps less the number
-           * of active steps and less the number of steps still in the queue.
-           */
-          val nActive        = activeSteps.map(_.length).sum
-          val nQueued        = stepQueue.map(_.length).sum
-          val completedSteps = totalSteps - (nActive + nQueued)
+            /* The number of completed steps is the total number of steps less the number
+             * of active steps and less the number of steps still in the queue.
+             */
+            val nActive        = activeSteps.map(_.length).sum
+            val nQueued        = stepQueue.map(_.length).sum
+            val completedSteps = totalSteps - (nActive + nQueued)
 
-          // update the progress log
-          if (completedSteps > lastCompletedSteps) {
-            logger.info(
-              s"Job queue progress: $completedSteps/$totalSteps steps (${completedSteps * 100 / totalSteps}%)"
-            )
+            // update the progress log
+            if (completedSteps > lastCompletedSteps) {
+              logger.info(
+                s"Job queue progress: $completedSteps/$totalSteps steps (${completedSteps * 100 / totalSteps}%)"
+              )
 
-            // update the total number of steps completed
-            lastCompletedSteps = completedSteps
+              // update the total number of steps completed
+              lastCompletedSteps = completedSteps
+            }
+          } catch {
+            case ex: AwsServiceException if ex.isThrottlingException =>
+              logger.warn("AWS rate limit exceeded, throttling...")
+              Thread.sleep(2.minutes.toMillis)
           }
         }
       }
