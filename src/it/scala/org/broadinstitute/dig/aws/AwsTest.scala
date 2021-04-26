@@ -2,13 +2,12 @@ package org.broadinstitute.dig.aws
 
 import org.broadinstitute.dig.aws.config.AwsConfig
 
-
 final class AwsTest extends AwsFunSuite {
   import Implicits._
 
   private val config = AwsConfig.loadFromResource("config.json").get
 
-  override val s3: S3.Bucket = new S3.Bucket(config.s3.bucket)
+  override val s3: S3.Bucket   = new S3.Bucket(config.s3.bucket)
   override val emr: Emr.Runner = new Emr.Runner(config.emr, config.s3.bucket)
 
   /**
@@ -68,32 +67,35 @@ final class AwsTest extends AwsFunSuite {
     assert(s3.ls(key).nonEmpty)
     s3.rm(key)
     assert(s3.ls(key).isEmpty)
+    ()
   }
-  
+
   //Create one object and list it
   private def doPutLsOneObjectTest(makeKey: String => String): String => Unit = { pseudoDirKey =>
-    val key = makeKey(pseudoDirKey)
+    val key     = makeKey(pseudoDirKey)
     val content = "ABC"
 
     assert(s3.ls(key).isEmpty)
     s3.put(key, content)
     assert(s3.ls(key).nonEmpty)
-    assert(s3.get(key).mkString == content)
+    assert(s3.get(key).mkString() == content)
 
     // remove it
     s3.rm(key)
     assert(s3.ls(key).isEmpty)
+    ()
   }
 
   //Create n objects, then list them
   private def doPutLsTest(n: Int): String => Unit = { pseudoDirKey =>
     val pseudoDirKeyWithSlash = s"$pseudoDirKey/"
-    val expectedKeys = (1 to n).toList.map(i => s"$pseudoDirKey/$i")
+    val expectedKeys          = (1 to n).toList.map(i => s"$pseudoDirKey/$i")
 
     assert(s3.ls(pseudoDirKeyWithSlash).isEmpty)
 
-    expectedKeys.zipWithIndex.foreach { case (k, i) =>
-      s3.put(k, i.toString)
+    expectedKeys.zipWithIndex.foreach {
+      case (k, i) =>
+        s3.put(k, i.toString)
     }
 
     val putKeys = s3.ls(pseudoDirKeyWithSlash).map(_.key)
@@ -104,5 +106,6 @@ final class AwsTest extends AwsFunSuite {
     // remove them all
     s3.rm(pseudoDirKeyWithSlash)
     assert(s3.ls(pseudoDirKeyWithSlash).isEmpty)
+    ()
   }
 }

@@ -31,6 +31,7 @@ object Emr extends LazyLogging {
 
   /** Runners launch and add steps to job clusters. */
   final class Runner(config: EmrConfig, logBucket: String) {
+    private val subnetIterator = LazyList.continually(config.subnetIds).flatten.iterator
 
     /** Create a new cluster with some initial job steps and return the job
       * flow response, which can be used to add additional steps later.
@@ -59,7 +60,7 @@ object Emr extends LazyLogging {
       val instances = JobFlowInstancesConfig.builder
         .additionalMasterSecurityGroups(config.securityGroupIds.map(_.value): _*)
         .additionalSlaveSecurityGroups(config.securityGroupIds.map(_.value): _*)
-        .ec2SubnetId(config.subnetId.value)
+        .ec2SubnetId(subnetIterator.next().value)
         .ec2KeyName(config.sshKeyName)
         .instanceGroups(clusterDef.instanceGroups.asJava)
         .keepJobFlowAliveWhenNoSteps(true)

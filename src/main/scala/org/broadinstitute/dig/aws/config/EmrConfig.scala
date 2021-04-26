@@ -8,12 +8,14 @@ import org.json4s._
   */
 final case class EmrConfig(
     sshKeyName: String,
-    subnetId: SubnetId,
+    subnetIds: Seq[SubnetId],
     securityGroupIds: Seq[SecurityGroupId] = Seq(),
     serviceRoleId: RoleId = RoleId.defaultRole,
     jobFlowRoleId: RoleId = RoleId.ec2DefaultRole,
-    autoScalingRoleId: RoleId = RoleId.autoScalingDefaultRole,
-)
+    autoScalingRoleId: RoleId = RoleId.autoScalingDefaultRole
+) {
+  require(subnetIds.nonEmpty)
+}
 
 /** Companion object with custom JSON serializers.
   */
@@ -27,6 +29,6 @@ object EmrConfig {
   val customSerializers: Seq[CustomSerializer[_]] = Seq(
     RoleId.Serializer,
     SecurityGroupId.Serializer,
-    SubnetId.Serializer,
+    SubnetId.Serializer
   )
 }

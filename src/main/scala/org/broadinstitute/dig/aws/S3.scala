@@ -43,7 +43,7 @@ object S3 extends LazyLogging {
       // an exception indicates that the object doesn't exist
       Try(client.getObject(req)) match {
         case Success(stream) => stream.close(); true
-        case _ => false
+        case _               => false
       }
     }
 
@@ -64,7 +64,7 @@ object S3 extends LazyLogging {
 
     /** Upload a string to the bucket. */
     def put(key: String, content: String): PutObjectResponse = {
-      val fixed = content.replace("\r\n", "\n")
+      val fixed   = content.replace("\r\n", "\n")
       val request = RequestBody.fromString(fixed)
 
       client.putObject(PutObjectRequest.builder.bucket(bucket).key(key).build, request)
@@ -91,18 +91,18 @@ object S3 extends LazyLogging {
     /** Download the contents of a key to a file. */
     def download(key: String, dest: Path, overwrite: Boolean = false): Try[GetObjectResponse] = {
       val delete = if (overwrite) Try(Files.delete(dest)) else Success(())
-      val req = GetObjectRequest.builder.bucket(bucket).key(key).build
+      val req    = GetObjectRequest.builder.bucket(bucket).key(key).build
 
       delete match {
         case Success(_) | Failure(_: NoSuchFileException) => Try(client.getObject(req, dest))
-        case Failure(ex) => Failure(ex)
+        case Failure(ex)                                  => Failure(ex)
       }
     }
 
     /** List all the objects with a specific prefix recursively. */
     def ls(prefix: String): List[S3Object] = {
-      val req = ListObjectsV2Request.builder.bucket(bucket).prefix(prefix).build
-      val it = client.listObjectsV2Paginator(req).iterator().asScala
+      val req     = ListObjectsV2Request.builder.bucket(bucket).prefix(prefix).build
+      val it      = client.listObjectsV2Paginator(req).iterator().asScala
       val objects = new ListBuffer[S3Object]()
 
       // find all the keys in each object listing
@@ -115,21 +115,21 @@ object S3 extends LazyLogging {
         }
       }
 
-      objects.result
+      objects.result()
     }
 
     /** Delete a key (or all keys under a prefix) from S3. */
     def rm(key: String): Unit = {
       if (key.endsWith("/")) {
         val req = ListObjectsV2Request.builder.bucket(bucket).prefix(key).build
-        val it = client.listObjectsV2Paginator(req).iterator().asScala
+        val it  = client.listObjectsV2Paginator(req).iterator().asScala
 
         for (listing <- it) {
           if (listing.hasContents) {
-            val keys = listing.contents.asScala.map(_.key)
+            val keys            = listing.contents.asScala.map(_.key)
             val objectsToDelete = keys.map(ObjectIdentifier.builder.key(_).build)
-            val delete = Delete.builder.objects(objectsToDelete.asJava).build
-            val req = DeleteObjectsRequest.builder.bucket(bucket).delete(delete).build
+            val delete          = Delete.builder.objects(objectsToDelete.asJava).build
+            val req             = DeleteObjectsRequest.builder.bucket(bucket).delete(delete).build
 
             // delete all the objects in this listing
             client.deleteObjects(req)

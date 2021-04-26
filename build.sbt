@@ -3,7 +3,7 @@ lazy val Versions = new {
   val Janino           = "3.1.2"
   val LogbackClassic   = "1.2.3"
   val LogbackColorizer = "1.0.1"
-  val Scala            = "2.13.2"
+  val Scala            = "2.13.5"
   val ScalaLogging     = "3.9.2"
   val ScalaTest        = "3.0.8"
   val Json4s           = "3.6.8"
@@ -23,21 +23,21 @@ lazy val scalacOpts = Seq(
 )
 
 lazy val mainDeps = Seq(
-  "software.amazon.awssdk"         % "ec2"                  % Versions.Aws,
-  "software.amazon.awssdk"         % "emr"                  % Versions.Aws,
-  "software.amazon.awssdk"         % "s3"                   % Versions.Aws,
-  "software.amazon.awssdk"         % "secretsmanager"       % Versions.Aws,
-  "com.typesafe.scala-logging"     %% "scala-logging"       % Versions.ScalaLogging,
-  "ch.qos.logback"                 % "logback-classic"      % Versions.LogbackClassic,
-  "org.codehaus.janino"            % "janino"               % Versions.Janino,
-  "org.tuxdude.logback.extensions" % "logback-colorizer"    % Versions.LogbackColorizer,
-  "org.json4s"                     %% "json4s-jackson"      % Versions.Json4s,
-  "com.typesafe"                   % "config"               % Versions.TypesafeConfig,
-  "com.iheart"                     %% "ficus"               % Versions.Ficus,
+  "software.amazon.awssdk"         % "ec2"               % Versions.Aws,
+  "software.amazon.awssdk"         % "emr"               % Versions.Aws,
+  "software.amazon.awssdk"         % "s3"                % Versions.Aws,
+  "software.amazon.awssdk"         % "secretsmanager"    % Versions.Aws,
+  "com.typesafe.scala-logging"     %% "scala-logging"    % Versions.ScalaLogging,
+  "ch.qos.logback"                 % "logback-classic"   % Versions.LogbackClassic,
+  "org.codehaus.janino"            % "janino"            % Versions.Janino,
+  "org.tuxdude.logback.extensions" % "logback-colorizer" % Versions.LogbackColorizer,
+  "org.json4s"                     %% "json4s-jackson"   % Versions.Json4s,
+  "com.typesafe"                   % "config"            % Versions.TypesafeConfig,
+  "com.iheart"                     %% "ficus"            % Versions.Ficus
 )
 
 lazy val testDeps = Seq(
-  "org.scalatest"  %% "scalatest" % Versions.ScalaTest % "it,test"
+  "org.scalatest" %% "scalatest" % Versions.ScalaTest % "it,test"
 )
 
 lazy val root = (project in file("."))
