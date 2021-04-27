@@ -240,7 +240,7 @@ object Emr extends LazyLogging {
             //Thread.sleep(5.minutes.toMillis) // option (1)
 
             for ((cluster, i) <- clusters.zipWithIndex) {
-              Thread.sleep(10.seconds.toMillis) // option (2)
+              Thread.sleep(5.seconds.toMillis) // option (2)
 
               // poll the cluster status only only if there are active steps
               if (activeSteps(i).nonEmpty) {
