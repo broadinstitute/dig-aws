@@ -154,8 +154,9 @@ object Emr extends LazyLogging {
 
       // spin up clusters
       val clusters = for (_ <- 1 to nClusters) yield {
-        // required to prevent a rate limit issue
-        Thread.sleep(1.second.toMillis)
+        Thread.sleep(200.millis.toMillis)
+
+        // delay above needed to prevent rate limit issues
         createCluster(clusterDef, env)
       }
 
