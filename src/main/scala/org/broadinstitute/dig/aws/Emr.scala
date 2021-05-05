@@ -242,40 +242,44 @@ object Emr extends LazyLogging {
           try {
             //Thread.sleep(5.minutes.toMillis) // option (1)
 
-            for ((cluster, i) <- clusters.zipWithIndex) {
-              if (activeSteps(i).nonEmpty || stepQueue(i).nonEmpty) {
-                Thread.sleep(10.seconds.toMillis) // option (2)
+            // get a list of the clusters that still have steps to execute
+            val activeClusters = clusters.zipWithIndex.filter {
+              case (_, i) => activeSteps(i).nonEmpty || stepQueue(i).nonEmpty
+            }
 
-                // poll the cluster status only only if there are active steps
-                if (activeSteps(i).nonEmpty) {
-                  activeSteps(i) = clusterStatus(cluster, activeSteps(i).toIndexedSeq)
+            // poll each active cluster, add steps, etc.
+            for ((cluster, i) <- activeClusters) {
+              Thread.sleep(10.seconds.toMillis) // option (2)
+
+              // poll the cluster status only only if there are active steps
+              if (activeSteps(i).nonEmpty) {
+                activeSteps(i) = clusterStatus(cluster, activeSteps(i).toIndexedSeq)
+              }
+
+              // if there are too few active steps, pull steps from the queue
+              if (activeSteps(i).length < maxActiveSteps && stepQueue(i).nonEmpty) {
+                val n                            = maxActiveSteps - activeSteps(i).length
+                val (stepsToAdd, stepsRemaining) = stepQueue(i).splitAt(n)
+
+                // get the step configurations
+                val stepConfigs = stepsToAdd.map(_.build(terminateOnFailure))
+
+                // create the add steps request
+                val req = AddJobFlowStepsRequest.builder
+                  .jobFlowId(cluster.jobFlowId)
+                  .steps(stepConfigs.asJava)
+                  .build
+
+                // add the steps to the cluster
+                val response = client.addJobFlowSteps(req)
+
+                // add new step ids to the set of active steps for this cluster
+                if (response.hasStepIds) {
+                  activeSteps(i) ++= response.stepIds.asScala
                 }
 
-                // if there are too few active steps, pull steps from the queue
-                if (activeSteps(i).length < maxActiveSteps && stepQueue(i).nonEmpty) {
-                  val n                            = maxActiveSteps - activeSteps(i).length
-                  val (stepsToAdd, stepsRemaining) = stepQueue(i).splitAt(n)
-
-                  // get the step configurations
-                  val stepConfigs = stepsToAdd.map(_.build(terminateOnFailure))
-
-                  // create the add steps request
-                  val req = AddJobFlowStepsRequest.builder
-                    .jobFlowId(cluster.jobFlowId)
-                    .steps(stepConfigs.asJava)
-                    .build
-
-                  // add the steps to the cluster
-                  val response = client.addJobFlowSteps(req)
-
-                  // add new step ids to the set of active steps for this cluster
-                  if (response.hasStepIds) {
-                    activeSteps(i) ++= response.stepIds.asScala
-                  }
-
-                  // update the step queue for this cluster
-                  stepQueue(i) = stepsRemaining
-                }
+                // update the step queue for this cluster
+                stepQueue(i) = stepsRemaining
               }
             }
 
