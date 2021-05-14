@@ -7,6 +7,8 @@ import scala.language.higherKinds
 /**
  * @author clint
  * May 13, 2021
+ * 
+ * Provide some methods from the 2.13 stdlib to 2.12 code that aren't provided by scala-collection-compat.
  */
 object Shims {
   /**
