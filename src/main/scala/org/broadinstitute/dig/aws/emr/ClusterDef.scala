@@ -7,6 +7,8 @@ import software.amazon.awssdk.services.emr.model.EbsConfiguration
 import software.amazon.awssdk.services.emr.model.InstanceGroupConfig
 import software.amazon.awssdk.services.emr.model.InstanceRoleType
 import software.amazon.awssdk.services.emr.model.VolumeSpecification
+import org.broadinstitute.dig.aws.config.emr.EbsVolumeType
+import org.broadinstitute.dig.aws.config.EmrConfig
 
 /** Parameterized configuration for an EMR cluster. Constant settings are
   * located in `config.emr.EmrConfig` and are loaded in the JSON.
@@ -20,12 +22,14 @@ final case class ClusterDef(
     slaveInstanceType: Strategy = Strategy.default,
     masterVolumeSizeInGB: Int = 32,
     slaveVolumeSizeInGB: Int = 32,
-    applications: Seq[ApplicationName] = ClusterDef.defaultApplications,
+    applications: Seq[ApplicationName] = ClusterDef.Defaults.applications,
     applicationConfigurations: Seq[Configuration] = Seq.empty,
     bootstrapScripts: Seq[BootstrapScript] = Seq.empty,
     bootstrapSteps: Seq[Job.Step] = Seq.empty,
     visibleToAllUsers: Boolean = true,
-    stepConcurrency: Integer = 1
+    stepConcurrency: Integer = 1,
+    masterEbsVolumeType: EbsVolumeType = ClusterDef.Defaults.masterEbsVolumeType,
+    slaveEbsVolumeType: EbsVolumeType = ClusterDef.Defaults.slaveEbsVolumeType,
 ) {
   require(name.matches("[A-Za-z_]+[A-Za-z0-9_]*"), s"Illegal cluster name: $name")
   require(instances >= 1)
@@ -34,7 +38,7 @@ final case class ClusterDef(
   lazy val masterInstanceGroupConfig: InstanceGroupConfig = {
     val volumeSpec = VolumeSpecification.builder
       .sizeInGB(masterVolumeSizeInGB)
-      .volumeType("gp2")
+      .volumeType(masterEbsVolumeType.value)
       .build
 
     val deviceConfig = EbsBlockDeviceConfig.builder.volumeSpecification(volumeSpec).build
@@ -52,7 +56,7 @@ final case class ClusterDef(
   lazy val slaveInstanceGroupConfig: InstanceGroupConfig = {
     val volumeSpec = VolumeSpecification.builder
       .sizeInGB(slaveVolumeSizeInGB)
-      .volumeType("gp2")
+      .volumeType(slaveEbsVolumeType.value)
       .build
 
     val deviceConfig = EbsBlockDeviceConfig.builder.volumeSpecification(volumeSpec).build
@@ -76,11 +80,16 @@ final case class ClusterDef(
 /** Companion object for creating an EMR cluster. */
 object ClusterDef {
 
-  /** The default set used by pretty much every cluster. */
-  val defaultApplications: Seq[ApplicationName] = Seq(
-    ApplicationName.hadoop,
-    ApplicationName.spark,
-    ApplicationName.hive,
-    ApplicationName.hue
-  )
+  object Defaults {
+    /** The default set used by pretty much every cluster. */
+    val applications: Seq[ApplicationName] = Seq(
+      ApplicationName.hadoop,
+      ApplicationName.spark,
+      ApplicationName.hive,
+      ApplicationName.hue
+    )
+
+    val masterEbsVolumeType: EbsVolumeType = EmrConfig.Defaults.masterEbsVolumeType
+    val slaveEbsVolumeType: EbsVolumeType = EmrConfig.Defaults.slaveEbsVolumeType
+  }
 }
