@@ -5,6 +5,7 @@
 # metals language server
 .metals/
 .bloop/
+.bsp/
 
 # built code
 target/

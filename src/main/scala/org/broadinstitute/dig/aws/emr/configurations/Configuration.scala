@@ -5,6 +5,8 @@ import scala.jdk.CollectionConverters._
 
 import software.amazon.awssdk.services.emr.model
 
+import org.broadinstitute.dig.aws.compat.Shims
+
 /** Configurations are a tree-like set of properties and child configurations that
   * are used to configure an EMR cluster.
   *
@@ -45,6 +47,8 @@ class Configuration(val classification: String) {
 
   /** Add or update an existing child configuration. */
   def withConfiguration(classification: String)(f: Configuration => Configuration): this.type = {
+    import Shims._
+    
     configurations.updateWith(classification) {
       case Some(config) => Some(f(config))
       case None         => Some(f(new Configuration(classification)))

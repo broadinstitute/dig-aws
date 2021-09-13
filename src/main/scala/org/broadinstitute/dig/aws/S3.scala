@@ -15,6 +15,8 @@ import software.amazon.awssdk.core.sync.RequestBody
 import software.amazon.awssdk.services.s3.S3Client
 import software.amazon.awssdk.services.s3.model._
 
+import org.broadinstitute.dig.aws.compat.Shims
+
 object S3 extends LazyLogging {
 
   /** S3 client for storage. All buckets can share a single client. */
@@ -107,6 +109,8 @@ object S3 extends LazyLogging {
 
       // find all the keys in each object listing
       for (listing <- it) {
+        import Shims._
+        
         objects.addAll(listing.contents.asScala)
 
         // recursively follow common prefixes
