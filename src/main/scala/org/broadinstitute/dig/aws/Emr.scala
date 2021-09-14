@@ -22,8 +22,6 @@ import software.amazon.awssdk.services.emr.model.{
   TerminateJobFlowsRequest
 }
 
-import scala.collection.compat.immutable.LazyList
-
 /** AWS client for creating EMR clusters and running jobs.
   */
 object Emr extends LazyLogging {

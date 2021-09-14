@@ -36,8 +36,8 @@ lazy val mainDeps = Seq(
   "org.tuxdude.logback.extensions" % "logback-colorizer" % Versions.LogbackColorizer,
   "org.json4s"                     %% "json4s-jackson"   % Versions.Json4s,
   "com.typesafe"                   % "config"            % Versions.TypesafeConfig,
-  "com.iheart"                     %% "ficus"            % Versions.Ficus,
-  "org.scala-lang.modules"         %% "scala-collection-compat" % Versions.ScalaCollectionCompat
+  "com.iheart"                     %% "ficus"            % Versions.Ficus//,
+  //"org.scala-lang.modules"         %% "scala-collection-compat" % Versions.ScalaCollectionCompat
 )
 
 lazy val testDeps = Seq(
@@ -51,7 +51,8 @@ lazy val root = (project in file("."))
     name := "dig-aws",
     organization := Orgs.DIG,
     //NB: version set in version.sbt
-    crossScalaVersions := Versions.supportedScalaVersions,
+    //crossScalaVersions := Versions.supportedScalaVersions,
+    scalaVersion := Versions.Scala213,
     scalacOptions ++= scalacOpts,
     libraryDependencies ++= (mainDeps ++ testDeps)
   )
