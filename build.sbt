@@ -9,7 +9,6 @@ lazy val Versions = new {
   val Json4s           = "3.6.8"
   val TypesafeConfig   = "1.3.4"
   val Ficus            = "1.4.7"
-  val ScalaCollectionCompat = "2.5.0"
 }
 
 lazy val Orgs = new {
