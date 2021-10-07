@@ -22,8 +22,6 @@ import software.amazon.awssdk.services.emr.model.{
   TerminateJobFlowsRequest
 }
 
-import scala.collection.compat.immutable.LazyList
-
 /** AWS client for creating EMR clusters and running jobs.
   */
 object Emr extends LazyLogging {
@@ -33,7 +31,7 @@ object Emr extends LazyLogging {
 
   /** Runners launch and add steps to job clusters. */
   final class Runner(config: EmrConfig, logBucket: String) {
-    private val subnetIterator = LazyList.continually(config.subnetIds).flatten.iterator
+    private val subnetIterator = Iterator.continually(config.subnetIds).flatten
 
     /** Create a new cluster with some initial job steps and return the job
       * flow response, which can be used to add additional steps later.

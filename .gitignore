@@ -1,6 +1,7 @@
 .idea/
 .settings/
 .vscode/
+.history
 
 # metals language server
 .metals/

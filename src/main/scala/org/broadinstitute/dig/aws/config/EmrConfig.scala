@@ -12,7 +12,9 @@ final case class EmrConfig(
     securityGroupIds: Seq[SecurityGroupId] = Seq.empty,
     serviceRoleId: RoleId = RoleId.defaultRole,
     jobFlowRoleId: RoleId = RoleId.ec2DefaultRole,
-    autoScalingRoleId: RoleId = RoleId.autoScalingDefaultRole
+    autoScalingRoleId: RoleId = RoleId.autoScalingDefaultRole,
+    masterEbsVolumeType: EbsVolumeType = EmrConfig.Defaults.masterEbsVolumeType, 
+    slaveEbsVolumeType: EbsVolumeType = EmrConfig.Defaults.slaveEbsVolumeType 
 ) {
   require(subnetIds.nonEmpty)
 }
@@ -20,6 +22,11 @@ final case class EmrConfig(
 /** Companion object with custom JSON serializers.
   */
 object EmrConfig {
+
+  object Defaults {
+    val masterEbsVolumeType = EbsVolumeType.Gp2
+    val slaveEbsVolumeType = EbsVolumeType.Gp2
+  }
 
   /** Custom JSON serializers for various EMR case class settings. To use
     * these when de-serializing, add them like so:
@@ -29,6 +36,7 @@ object EmrConfig {
   val customSerializers: Seq[CustomSerializer[_]] = Seq(
     RoleId.Serializer,
     SecurityGroupId.Serializer,
-    SubnetId.Serializer
+    SubnetId.Serializer,
+    EbsVolumeType.JsonSupport.Serializer
   )
 }
