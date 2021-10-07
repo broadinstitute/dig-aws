@@ -3,9 +3,7 @@ lazy val Versions = new {
   val Janino           = "3.1.2"
   val LogbackClassic   = "1.2.3"
   val LogbackColorizer = "1.0.1"
-  val Scala212         = "2.12.14"
   val Scala213         = "2.13.6"
-  lazy val supportedScalaVersions = Seq(Scala212, Scala213)
   val ScalaLogging     = "3.9.2"
   val ScalaTest        = "3.0.8"
   val Json4s           = "3.6.8"
@@ -36,8 +34,7 @@ lazy val mainDeps = Seq(
   "org.tuxdude.logback.extensions" % "logback-colorizer" % Versions.LogbackColorizer,
   "org.json4s"                     %% "json4s-jackson"   % Versions.Json4s,
   "com.typesafe"                   % "config"            % Versions.TypesafeConfig,
-  "com.iheart"                     %% "ficus"            % Versions.Ficus//,
-  //"org.scala-lang.modules"         %% "scala-collection-compat" % Versions.ScalaCollectionCompat
+  "com.iheart"                     %% "ficus"            % Versions.Ficus
 )
 
 lazy val testDeps = Seq(
@@ -51,7 +48,6 @@ lazy val root = (project in file("."))
     name := "dig-aws",
     organization := Orgs.DIG,
     //NB: version set in version.sbt
-    //crossScalaVersions := Versions.supportedScalaVersions,
     scalaVersion := Versions.Scala213,
     scalacOptions ++= scalacOpts,
     libraryDependencies ++= (mainDeps ++ testDeps)
