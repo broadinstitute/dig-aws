@@ -48,12 +48,17 @@ object Emr extends LazyLogging {
         stepConcurrency = 1
       }
 
-      // add environment variables both yarn (for PySpark) and hadoop (for Scripts)
-      for (export <- Seq("yarn-env", "hadoop-env")) {
-        configurations.find(_.classification == export) match {
-          case Some(config) => config.export(env)
-          case _            => configurations :+= new Configuration(export).export(env)
-        }
+      // add environment variables as export classification for hadoop (for Scripts)
+      configurations.find(_.classification == "hadoop-env") match {
+        case Some(config) => config.export(env)
+        case _            => configurations :+= new Configuration("hadoop-env").export(env)
+      }
+
+      // add environment variables as properties for spark (for PySpark)
+      val modifiedEnv = env.map { case (key, value) => "spark.yarn.appMasterEnv." + key -> value }
+      configurations.find(_.classification == "spark-defaults") match {
+        case Some(config) => config.addProperties(modifiedEnv)
+        case _            => configurations :+= new Configuration("spark-defaults").addProperties(modifiedEnv)
       }
 
       // create all the instances
