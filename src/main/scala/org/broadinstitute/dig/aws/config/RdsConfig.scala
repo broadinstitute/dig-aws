@@ -3,8 +3,8 @@ package org.broadinstitute.dig.aws.config
 import scala.util.Try
 
 /** RDS configuration settings. */
-final case class RdsConfig(instance: String) {
-  def secret: Try[RdsConfig.Secret] = Secrets.get[RdsConfig.Secret](instance)
+final case class RdsConfig(instance: String, dbOverride: Option[String]) {
+  def secret: Try[RdsConfig.Secret] = Secrets.get[RdsConfig.Secret](instance).map(_.overrideDB(dbOverride))
 }
 
 /** Companion object. */
@@ -30,5 +30,9 @@ object RdsConfig {
 
     /** The connection string for the default schema. */
     def connectionString: String = connectionString(dbname)
+
+    def overrideDB(dbOverride: Option[String]): RdsConfig.Secret = dbOverride.map { db =>
+      this.copy(dbname = db)
+    }.getOrElse(this)
   }
 }

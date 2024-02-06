@@ -23,16 +23,29 @@ object S3 extends LazyLogging {
   lazy val client: S3Client = S3Client.builder.build
 
   /** Methods for interacting with a specific bucket. */
-  final class Bucket(val bucket: String) {
+  final class Bucket(val bucket: String, val maybeSubdir: Option[String]) {
+
+    /** When passing paths to jobs if there is a subdir add it to bucket name else just bucket */
+    val path: String = maybeSubdir.map { subdir => s"$bucket/$subdir"}.getOrElse(bucket)
+
+    /** To define bucket and then separate key, add subdir/ as a prefix to key, else just key */
+    def keyPath(key: String): String = {
+      maybeSubdir.map { subdir => s"$subdir/$key" }.getOrElse(key)
+    }
+
+    /** When a file is received strip off the prefix as well if it is to be used as inputs */
+    def stripSubdir(key: String): String = {
+      maybeSubdir.map { subdir => key.stripPrefix(s"$subdir/") }.getOrElse(key)
+    }
 
     /** Returns the S3 URI of a given key. */
     def s3UriOf(key: String): URI = {
-      new URI(s"s3://$bucket/$key")
+      new URI(s"s3://$bucket/${keyPath(key)}")
     }
 
     /** Returns the public URI of a given key. */
     def publicUriOf(key: String): URI = {
-      val req = GetUrlRequest.builder.bucket(bucket).key(key).build
+      val req = GetUrlRequest.builder.bucket(bucket).key(keyPath(key)).build
       val url = client.utilities().getUrl(req).toExternalForm
 
       new URI(url)
@@ -40,7 +53,7 @@ object S3 extends LazyLogging {
 
     /** Test whether or not a key exists. */
     def keyExists(key: String): Boolean = {
-      val req = GetObjectRequest.builder.bucket(bucket).key(key).range("bytes=0-0").build
+      val req = GetObjectRequest.builder.bucket(bucket).key(keyPath(key)).range("bytes=0-0").build
 
       // an exception indicates that the object doesn't exist
       Try(client.getObject(req)) match {
@@ -51,12 +64,12 @@ object S3 extends LazyLogging {
 
     /** Get the head request of an object in the bucket. */
     def head(key: String): ResponseInputStream[GetObjectResponse] = {
-      client.getObject(GetObjectRequest.builder.bucket(bucket).key(key).range("bytes=0-0").build)
+      client.getObject(GetObjectRequest.builder.bucket(bucket).key(keyPath(key)).range("bytes=0-0").build)
     }
 
     /** Get an object in the bucket, returns a stream. */
     def get(key: String): ResponseInputStream[GetObjectResponse] = {
-      client.getObject(GetObjectRequest.builder.bucket(bucket).key(key).build)
+      client.getObject(GetObjectRequest.builder.bucket(bucket).key(keyPath(key)).build)
     }
 
     /** Extract the metadata for an object. */
@@ -69,12 +82,12 @@ object S3 extends LazyLogging {
       val fixed   = content.replace("\r\n", "\n")
       val request = RequestBody.fromString(fixed)
 
-      client.putObject(PutObjectRequest.builder.bucket(bucket).key(key).build, request)
+      client.putObject(PutObjectRequest.builder.bucket(bucket).key(keyPath(key)).build, request)
     }
 
     /** Upload a file to the bucket. */
     def putFile(key: String, file: Path): PutObjectResponse = {
-      client.putObject(PutObjectRequest.builder.bucket(bucket).key(key).build, RequestBody.fromFile(file))
+      client.putObject(PutObjectRequest.builder.bucket(bucket).key(keyPath(key)).build, RequestBody.fromFile(file))
     }
 
     /** Upload a resource to the bucket. */
@@ -93,7 +106,7 @@ object S3 extends LazyLogging {
     /** Download the contents of a key to a file. */
     def download(key: String, dest: Path, overwrite: Boolean = false): Try[GetObjectResponse] = {
       val delete = if (overwrite) Try(Files.delete(dest)) else Success(())
-      val req    = GetObjectRequest.builder.bucket(bucket).key(key).build
+      val req    = GetObjectRequest.builder.bucket(bucket).key(keyPath(key)).build
 
       delete match {
         case Success(_) | Failure(_: NoSuchFileException) => Try(client.getObject(req, dest))
@@ -103,7 +116,7 @@ object S3 extends LazyLogging {
 
     /** List all the objects with a specific prefix recursively. */
     def ls(prefix: String): List[S3Object] = {
-      val req     = ListObjectsV2Request.builder.bucket(bucket).prefix(prefix).build
+      val req     = ListObjectsV2Request.builder.bucket(bucket).prefix(keyPath(prefix)).build
       val it      = client.listObjectsV2Paginator(req).iterator().asScala
       val objects = new ListBuffer[S3Object]()
 
@@ -119,13 +132,15 @@ object S3 extends LazyLogging {
         }
       }
 
-      objects.result()
+      objects.result().map { obj =>
+        obj.toBuilder.key(stripSubdir(obj.key)).build()
+      }
     }
 
     /** Delete a key (or all keys under a prefix) from S3. */
     def rm(key: String): Unit = {
       if (key.endsWith("/")) {
-        val req = ListObjectsV2Request.builder.bucket(bucket).prefix(key).build
+        val req = ListObjectsV2Request.builder.bucket(bucket).prefix(keyPath(key)).build
         val it  = client.listObjectsV2Paginator(req).iterator().asScala
 
         for (listing <- it) {
@@ -140,7 +155,7 @@ object S3 extends LazyLogging {
           }
         }
       } else {
-        val req = DeleteObjectRequest.builder.bucket(bucket).key(key).build
+        val req = DeleteObjectRequest.builder.bucket(bucket).key(keyPath(key)).build
 
         // delete a single object
         client.deleteObject(req)

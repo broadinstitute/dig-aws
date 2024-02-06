@@ -9,7 +9,14 @@ import scala.io.Source
 import scala.util.Try
 
 /** AWS configuration settings. */
-final case class AwsConfig(s3: S3Config, emr: EmrConfig, rds: RdsConfig)
+final case class AwsConfig(
+  input: S3Config,
+  output: S3Config,
+  bioindex: S3Config,
+  emr: EmrConfig,
+  runs: RdsConfig,
+  portal: RdsConfig
+)
 
 /** Companion object used for loading configuration files. */
 object AwsConfig {
