@@ -10,6 +10,7 @@ import scala.util.Try
 
 /** AWS configuration settings. */
 final case class AwsConfig(
+  project: String,
   input: S3Config,
   output: S3Config,
   bioindex: S3Config,
