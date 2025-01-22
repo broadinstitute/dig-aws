@@ -302,9 +302,9 @@ object Emr extends LazyLogging {
               lastCompletedSteps = completedSteps
             }
           } catch {
-            case ex: AwsServiceException if ex.isThrottlingException =>
-              logger.warn("AWS rate limit exceeded, throttling...")
-              Thread.sleep(2.minutes.toMillis)
+            case ex: Exception =>
+              logger.error(s"Exception during job processing: ${ex.getMessage}", ex)
+              throw ex
           }
         }
       }
