@@ -202,9 +202,10 @@ object Emr extends LazyLogging {
           .toArray
           .map(_._2.flatMap(_.steps).toList)
 
+        logger.info("Here 1")
         // quick sanity check...
         assert(stepQueue.map(_.length).sum == totalSteps)
-
+        logger.info("Here 2")
         /* Steps taken from the stepQueue and added to a cluster have their step ids
          * added to a set of parallel arrays (one per cluster).
          */
@@ -215,7 +216,7 @@ object Emr extends LazyLogging {
 
         // loop until all step queues and active step arrays are empty
         while (stepQueue.exists(_.nonEmpty) || activeSteps.exists(_.nonEmpty)) {
-
+          logger.info("Here 3")
           /* AWS rate limits their API. However, it appears as though this rate
            * limit is computed. This means that if (for example) the rate limit
            * is 300 requests per minute, then that's 5 requests per second. If
