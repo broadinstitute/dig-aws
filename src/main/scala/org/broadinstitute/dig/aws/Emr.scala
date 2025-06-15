@@ -129,6 +129,9 @@ object Emr extends LazyLogging {
       
       // Wrap execution in a Try block to ensure all clusters are terminated if an exception occurs
       val runResult = Try {
+        // Shuffle jobs once before distributing to clusters
+        val shuffledJobs = Random.shuffle(allJobs)
+        
         // For each cluster, maintain a mutable queue of steps remaining and the currently active step ids.
         val stepQueues    = mutable.Map.empty[String, List[() => software.amazon.awssdk.services.emr.model.StepConfig]]
         val activeSteps   = mutable.Map.empty[String, List[String]]
@@ -136,7 +139,7 @@ object Emr extends LazyLogging {
           // Distribute the shuffled steps across clusters.
           // Here we take the overall shuffled list and assign them round-robin.
           val stepsForThisCluster =
-            Random.shuffle(allJobs).zipWithIndex.collect { case (job, idx) if idx % nClusters == clusters.indexOf(cluster) => job }
+            shuffledJobs.zipWithIndex.collect { case (job, idx) if idx % nClusters == clusters.indexOf(cluster) => job }
           // We extract the underlying step builders (by deferring the build so we can set the termination flag later).
           val stepBuilders = stepsForThisCluster.flatMap(_.steps).map { step =>
             // We wrap the build in a function so we can pass the flag at the right moment.
