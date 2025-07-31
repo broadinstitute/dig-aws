@@ -81,19 +81,22 @@ object Emr extends LazyLogging {
     }
 
     private def clusterStatus(cluster: RunJobFlowResponse, stepIds: Seq[String]): List[String] = {
-      val req = ListStepsRequest.builder
-        .clusterId(cluster.jobFlowId)
-        .stepIds(stepIds.asJava)
-        .build
+      // AWS ListSteps API has a limit of 10 step IDs per request, so batch the requests
+      stepIds.grouped(10).flatMap { batchStepIds =>
+        val req = ListStepsRequest.builder
+          .clusterId(cluster.jobFlowId)
+          .stepIds(batchStepIds.asJava)
+          .build
 
-      client.listStepsPaginator(req).steps.asScala.toArray.collect { step =>
-        step.status.state match {
-          case StepState.PENDING | StepState.RUNNING => step.id
-          case StepState.FAILED                      => throw new Exception(s"${cluster.jobFlowId} failed")
-          case StepState.CANCELLED                   => throw new Exception(s"${cluster.jobFlowId} cancelled")
-          case _                                     => ""  // ignore other states
-        }
-      }.filter(_.nonEmpty).toList
+        client.listStepsPaginator(req).steps.asScala.toArray.collect { step =>
+          step.status.state match {
+            case StepState.PENDING | StepState.RUNNING => step.id
+            case StepState.FAILED                      => throw new Exception(s"${cluster.jobFlowId} failed")
+            case StepState.CANCELLED                   => throw new Exception(s"${cluster.jobFlowId} cancelled")
+            case _                                     => ""  // ignore other states
+          }
+        }.filter(_.nonEmpty)
+      }.toList
     }
 
     /** Terminate a list of running clusters. */
@@ -114,7 +117,7 @@ object Emr extends LazyLogging {
         case job if job.parallelSteps => job.steps.map(new Job(_))
         case job                      => Seq(job)
       }
-      val maxActiveSteps     = 10
+      val maxActiveSteps     = clusterDef.stepConcurrency
       val nClusters          = allJobs.size.min(maxParallel)
       val totalSteps         = jobs.flatMap(_.steps).size
       val terminateOnFailure = clusterDef.stepConcurrency == 1 || clusterDef.bootstrapSteps.nonEmpty
@@ -176,7 +179,7 @@ object Emr extends LazyLogging {
               }
             }
 
-            // If there is capacity for more steps (AWS limit 10)
+            // If there is capacity for more steps (up to configured stepConcurrency)
             if (actives.length < maxActiveSteps && queue.nonEmpty) {
               val remainingCapacity = maxActiveSteps - actives.length
               val (toAdd, remainingQueue) = queue.splitAt(remainingCapacity)
