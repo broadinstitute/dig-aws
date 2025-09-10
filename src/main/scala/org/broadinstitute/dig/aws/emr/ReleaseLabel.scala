@@ -11,8 +11,8 @@ final case class ReleaseLabel(value: String) {
 object ReleaseLabel {
 
   /** Default EMR instance release version. */
-  val emrDefault: ReleaseLabel = ReleaseLabel("emr-6.7.0")
+  val emrDefault: ReleaseLabel = ReleaseLabel("emr-7.10.0")
 
   /** The latest EMR instance release version. */
-  val emrLatest: ReleaseLabel = ReleaseLabel("emr-7.0.0")
+  val emrLatest: ReleaseLabel = ReleaseLabel("emr-7.10.0")
 }
