@@ -117,7 +117,7 @@ object Emr extends LazyLogging {
         case job if job.parallelSteps => job.steps.map(new Job(_))
         case job                      => Seq(job)
       }
-      val maxActiveSteps     = clusterDef.stepConcurrency
+      val maxActiveSteps     = 10
       val nClusters          = allJobs.size.min(maxParallel)
       val totalSteps         = jobs.flatMap(_.steps).size
       val terminateOnFailure = clusterDef.stepConcurrency == 1 || clusterDef.bootstrapSteps.nonEmpty
