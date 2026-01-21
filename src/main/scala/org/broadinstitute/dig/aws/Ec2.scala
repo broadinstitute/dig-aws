@@ -87,8 +87,8 @@ object Ec2 extends LazyLogging {
       * functions, such as floating point number calculations, graphics processing, or data
       * pattern matching, more efficiently than is possible in software running on CPUs.
       */
-    def gpuAccelerated(vCPUs: Int = 16, mem: MemorySize = 120.gb): Strategy = {
-      Strategy("g3", vCPUs, mem)
+    def gpuAccelerated(vCPUs: Int = 16, mem: MemorySize = 64.gb): Strategy = {
+      Strategy("g4dn", vCPUs, mem)
     }
   }
 }
