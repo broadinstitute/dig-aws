@@ -17,7 +17,7 @@ object Ec2 extends LazyLogging {
   /** Fetch all current gen instances large enough for EMR usage. */
   lazy val allInstanceTypes: Seq[InstanceTypeInfo] = {
     val currentGen = Filter.builder.name("current-generation").values("true").build
-    val req = DescribeInstanceTypesRequest.builder.filters(currentGen).build
+    val req = DescribeInstanceTypesRequest.builder.build
 
     client.describeInstanceTypesPaginator(req)
       .iterator.asScala
@@ -79,7 +79,7 @@ object Ec2 extends LazyLogging {
       * performance computing (HPC), scientific modeling, dedicated gaming servers and ad server
       * engines, machine learning inference and other compute intensive applications.
       */
-    def computeOptimized(vCPUs: Int = 16, mem: MemorySize = 42.gb): Strategy = {
+    def computeOptimized(vCPUs: Int = 8, mem: MemorySize = 16.gb): Strategy = {
       Strategy("c5", vCPUs, mem)
     }
 
@@ -87,7 +87,7 @@ object Ec2 extends LazyLogging {
       * functions, such as floating point number calculations, graphics processing, or data
       * pattern matching, more efficiently than is possible in software running on CPUs.
       */
-    def gpuAccelerated(vCPUs: Int = 16, mem: MemorySize = 64.gb): Strategy = {
+    def gpuAccelerated(vCPUs: Int = 8, mem: MemorySize = 32.gb): Strategy = {
       Strategy("g4dn", vCPUs, mem)
     }
   }
