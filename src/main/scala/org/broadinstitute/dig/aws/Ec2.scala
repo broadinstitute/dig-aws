@@ -17,7 +17,7 @@ object Ec2 extends LazyLogging {
   /** Fetch all current gen instances large enough for EMR usage. */
   lazy val allInstanceTypes: Seq[InstanceTypeInfo] = {
     val currentGen = Filter.builder.name("current-generation").values("true").build
-    val req = DescribeInstanceTypesRequest.builder.build
+    val req = DescribeInstanceTypesRequest.builder.filters(currentGen).build
 
     client.describeInstanceTypesPaginator(req)
       .iterator.asScala
@@ -63,14 +63,14 @@ object Ec2 extends LazyLogging {
       * repositories.
       */
     def generalPurpose(vCPUs: Int = 8, mem: MemorySize = 32.gb): Strategy = {
-      Strategy("m5", vCPUs, mem)
+      Strategy("m6a", vCPUs, mem)
     }
 
     /** Memory optimized instances are designed to deliver fast performance for workloads that
       * process large data sets in memory.
       */
     def memoryOptimized(vCPUs: Int = 8, mem: MemorySize = 64.gb): Strategy = {
-      Strategy("r5", vCPUs, mem)
+      Strategy("r6a", vCPUs, mem)
     }
 
     /** Compute Optimized instances are ideal for compute bound applications that benefit from
@@ -80,7 +80,7 @@ object Ec2 extends LazyLogging {
       * engines, machine learning inference and other compute intensive applications.
       */
     def computeOptimized(vCPUs: Int = 8, mem: MemorySize = 16.gb): Strategy = {
-      Strategy("c5", vCPUs, mem)
+      Strategy("c6a", vCPUs, mem)
     }
 
     /** Accelerated computing instances use hardware accelerators, or co-processors, to perform
