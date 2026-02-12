@@ -1,5 +1,5 @@
 lazy val Versions = new {
-  val Aws              = "2.13.56"
+  val Aws              = "2.41.26"
   val Janino           = "3.1.2"
   val LogbackClassic   = "1.2.3"
   val LogbackColorizer = "1.0.1"
