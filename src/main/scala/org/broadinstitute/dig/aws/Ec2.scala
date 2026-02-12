@@ -63,14 +63,14 @@ object Ec2 extends LazyLogging {
       * repositories.
       */
     def generalPurpose(vCPUs: Int = 8, mem: MemorySize = 32.gb): Strategy = {
-      Strategy("m5", vCPUs, mem)
+      Strategy("m6a", vCPUs, mem)
     }
 
     /** Memory optimized instances are designed to deliver fast performance for workloads that
       * process large data sets in memory.
       */
     def memoryOptimized(vCPUs: Int = 8, mem: MemorySize = 64.gb): Strategy = {
-      Strategy("r5", vCPUs, mem)
+      Strategy("r6a", vCPUs, mem)
     }
 
     /** Compute Optimized instances are ideal for compute bound applications that benefit from
@@ -79,15 +79,15 @@ object Ec2 extends LazyLogging {
       * performance computing (HPC), scientific modeling, dedicated gaming servers and ad server
       * engines, machine learning inference and other compute intensive applications.
       */
-    def computeOptimized(vCPUs: Int = 16, mem: MemorySize = 42.gb): Strategy = {
-      Strategy("c5", vCPUs, mem)
+    def computeOptimized(vCPUs: Int = 8, mem: MemorySize = 16.gb): Strategy = {
+      Strategy("c6a", vCPUs, mem)
     }
 
     /** Accelerated computing instances use hardware accelerators, or co-processors, to perform
       * functions, such as floating point number calculations, graphics processing, or data
       * pattern matching, more efficiently than is possible in software running on CPUs.
       */
-    def gpuAccelerated(vCPUs: Int = 16, mem: MemorySize = 64.gb): Strategy = {
+    def gpuAccelerated(vCPUs: Int = 8, mem: MemorySize = 32.gb): Strategy = {
       Strategy("g4dn", vCPUs, mem)
     }
   }
