@@ -18,6 +18,7 @@ project/project/
 .cache-tests
 .classpath
 .project
+.DS_Store
 
 # integration test files
 src/it/resources/config.json
