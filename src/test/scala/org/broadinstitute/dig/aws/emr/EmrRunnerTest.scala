@@ -150,6 +150,23 @@ final class EmrRunnerTest extends FunSuite {
 
     assert(ex.getMessage.contains("replacement budget"))
     assert(fake.clusters.size == 2)
-    assert(fake.liveClusterIds.isEmpty, "no cluster left running")
+    assert(fake.clusters("j-2").terminated, "the lost cluster still in `live` was terminated by the failure path")
+  }
+
+  test("the replacement budget is shared across clusters, not per lineage") {
+    val fake = new FakeEmr
+    // two clusters; j-1 is lost at its first poll (poll 1) and uses the single replacement,
+    // j-2 is lost at its first poll (poll 2) and finds the budget spent
+    fake.beforePoll = { n =>
+      if (n == 1) fake.kill("j-1", ClusterStateChangeReasonCode.INSTANCE_FAILURE)
+      if (n == 2) fake.kill("j-2", ClusterStateChangeReasonCode.INSTANCE_FAILURE)
+    }
+
+    val ex = intercept[Exception] {
+      runner(fake).runJobs(clusterDef(), Map.empty, jobs(4), maxParallel = 2, maxReplacements = 1)
+    }
+
+    assert(ex.getMessage.contains("replacement budget"))
+    assert(fake.clusters.size == 3, "exactly one replacement was launched before the budget ran out")
   }
 }
