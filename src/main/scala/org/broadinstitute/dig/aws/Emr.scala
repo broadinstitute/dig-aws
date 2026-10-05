@@ -2,15 +2,14 @@ package org.broadinstitute.dig.aws
 
 import com.typesafe.scalalogging.LazyLogging
 import org.broadinstitute.dig.aws.config.EmrConfig
-import org.broadinstitute.dig.aws.emr.{ClusterDef, Job}
+import org.broadinstitute.dig.aws.emr.{ClusterDef, EmrApi, Job}
 import org.broadinstitute.dig.aws.emr.configurations.Configuration
 
 import scala.concurrent.duration._
 import scala.jdk.CollectionConverters._
 import scala.util.{Failure, Random, Success, Try}
-import software.amazon.awssdk.awscore.exception.AwsServiceException
 import software.amazon.awssdk.services.emr.EmrClient
-import software.amazon.awssdk.services.emr.model.{AddJobFlowStepsRequest, DescribeClusterRequest, JobFlowInstancesConfig, ListStepsRequest, RunJobFlowRequest, RunJobFlowResponse, StepState, TerminateJobFlowsRequest}
+import software.amazon.awssdk.services.emr.model.{JobFlowInstancesConfig, RunJobFlowRequest, StepConfig, StepState}
 
 import scala.collection.mutable
 
@@ -22,10 +21,19 @@ object Emr extends LazyLogging {
   lazy val client: EmrClient = EmrClient.builder.build
 
   /** Runners launch and add steps to job clusters. */
-  final class Runner(config: EmrConfig, logBucket: String) {
+  class Runner(config: EmrConfig, logBucket: String, api: EmrApi, sleep: FiniteDuration => Unit) {
+
+    /** Production constructor: live EMR API and real sleeping. */
+    def this(config: EmrConfig, logBucket: String) = {
+      this(config, logBucket, EmrApi.live, (d: FiniteDuration) => Thread.sleep(d.toMillis))
+    }
+
     private val subnetIterator = Iterator.continually(config.subnetIds).flatten
 
-    private def createCluster(clusterDef: ClusterDef, env: Map[String, String]): RunJobFlowResponse = {
+    /** Build the request that creates a cluster for `clusterDef`. Protected so
+      * tests can override it (ClusterDef.instanceGroups looks up EC2 instance types).
+      */
+    protected def createClusterRequest(clusterDef: ClusterDef, env: Map[String, String]): RunJobFlowRequest = {
       val bootstrapConfigs = clusterDef.bootstrapScripts.map(_.config)
       val logUri           = s"s3://$logBucket/logs/${clusterDef.name}"
       var configurations   = clusterDef.applicationConfigurations
@@ -77,35 +85,24 @@ object Emr extends LazyLogging {
       }
 
       val request = requestBuilder.build
-      client.runJobFlow(request)
+      request
     }
 
-    private def clusterStatus(cluster: RunJobFlowResponse, stepIds: Seq[String]): List[String] = {
-      // AWS ListSteps API has a limit of 10 step IDs per request, so batch the requests
-      stepIds.grouped(10).flatMap { batchStepIds =>
-        val req = ListStepsRequest.builder
-          .clusterId(cluster.jobFlowId)
-          .stepIds(batchStepIds.asJava)
-          .build
+    private def createCluster(clusterDef: ClusterDef, env: Map[String, String]): String = {
+      api.runJobFlow(createClusterRequest(clusterDef, env))
+    }
 
-        client.listStepsPaginator(req).steps.asScala.toArray.collect { step =>
-          step.status.state match {
-            case StepState.PENDING | StepState.RUNNING => step.id
-            case StepState.FAILED                      => throw new Exception(s"${cluster.jobFlowId} failed")
-            case StepState.CANCELLED                   => throw new Exception(s"${cluster.jobFlowId} cancelled")
-            case _                                     => ""  // ignore other states
-          }
-        }.filter(_.nonEmpty)
-      }.toList
+    private def clusterStatus(clusterId: String, stepIds: Seq[String]): List[String] = {
+      api.stepStates(clusterId, stepIds).toList.collect {
+        case (id, StepState.PENDING | StepState.RUNNING) => id
+        case (_, StepState.FAILED)                       => throw new Exception(s"$clusterId failed")
+        case (_, StepState.CANCELLED)                    => throw new Exception(s"$clusterId cancelled")
+      }
     }
 
     /** Terminate a list of running clusters. */
-    private def terminateClusters(clusters: Seq[RunJobFlowResponse]): Unit = {
-      clusters.map(_.jobFlowId).sliding(10, 10).foreach { flowIds =>
-        val req = TerminateJobFlowsRequest.builder.jobFlowIds(flowIds.asJava).build
-        client.terminateJobFlows(req)
-      }
-
+    private def terminateClusters(clusterIds: Seq[String]): Unit = {
+      api.terminate(clusterIds)
       logger.info("Clusters terminated.")
     }
 
@@ -124,8 +121,8 @@ object Emr extends LazyLogging {
 
       logger.info(s"Creating $nClusters clusters for ${jobs.size} jobs...")
 
-      val clusters: Vector[RunJobFlowResponse] = (1 to nClusters).toVector.map { _ =>
-        Thread.sleep(1.second.toMillis) // delay to avoid rate limiting
+      val clusters: Vector[String] = (1 to nClusters).toVector.map { _ =>
+        sleep(1.second) // delay to avoid rate limiting
         createCluster(clusterDef, env)
       }
       logger.info("Clusters launched.")
@@ -136,7 +133,7 @@ object Emr extends LazyLogging {
         val shuffledJobs = Random.shuffle(allJobs)
         
         // For each cluster, maintain a mutable queue of steps remaining and the currently active step ids.
-        val stepQueues    = mutable.Map.empty[String, List[() => software.amazon.awssdk.services.emr.model.StepConfig]]
+        val stepQueues    = mutable.Map.empty[String, List[() => StepConfig]]
         val activeSteps   = mutable.Map.empty[String, List[String]]
         clusters.foreach { cluster =>
           // Distribute the shuffled steps across clusters.
@@ -148,12 +145,12 @@ object Emr extends LazyLogging {
             // We wrap the build in a function so we can pass the flag at the right moment.
             () => step.build(terminateOnFailure)
           }.toList
-          stepQueues(cluster.jobFlowId) = stepBuilders
-          activeSteps(cluster.jobFlowId) = List.empty
+          stepQueues(cluster) = stepBuilders
+          activeSteps(cluster) = List.empty
         }
 
         // A mutable set of "live" clusters (identified by jobFlowId) that haven't yet been terminated.
-        val liveClusters = mutable.Set(clusters.map(_.jobFlowId): _*)
+        val liveClusters = mutable.Set(clusters: _*)
 
         // For progress reporting (global across clusters)
         var lastCompletedSteps = -1
@@ -168,15 +165,8 @@ object Emr extends LazyLogging {
 
             // Only poll status if there are active steps.
             if (actives.nonEmpty) {
-              val cluster = clusters.find(_.jobFlowId == jobFlowId).get
-              try {
-                actives = clusterStatus(cluster, actives)
-                activeSteps(jobFlowId) = actives
-              } catch {
-                case ex: AwsServiceException if ex.isThrottlingException =>
-                  logger.warn("AWS rate limit exceeded, throttling...")
-                  Thread.sleep(2.minutes.toMillis)
-              }
+              actives = clusterStatus(jobFlowId, actives)
+              activeSteps(jobFlowId) = actives
             }
 
             // If there is capacity for more steps (up to configured stepConcurrency)
@@ -184,25 +174,17 @@ object Emr extends LazyLogging {
               val remainingCapacity = maxActiveSteps - actives.length
               val (toAdd, remainingQueue) = queue.splitAt(remainingCapacity)
               val stepConfigs = toAdd.map(buildFn => buildFn())
-              val cluster = clusters.find(_.jobFlowId == jobFlowId).get
-              val req = AddJobFlowStepsRequest.builder
-                .jobFlowId(cluster.jobFlowId)
-                .steps(stepConfigs.asJava)
-                .build
-              val response = client.addJobFlowSteps(req)
-              if (response.hasStepIds) {
-                activeSteps(jobFlowId) = activeSteps(jobFlowId) ++ response.stepIds.asScala
-              }
+              val stepIds = api.addSteps(jobFlowId, stepConfigs)
+              activeSteps(jobFlowId) = activeSteps(jobFlowId) ++ stepIds
               stepQueues(jobFlowId) = remainingQueue
             }
 
             if (stepQueues.getOrElse(jobFlowId, Nil).isEmpty && activeSteps.getOrElse(jobFlowId, Nil).isEmpty) {
               logger.info(s"Terminating cluster $jobFlowId because all assigned work has been distributed and completed.")
-              val terminateReq = TerminateJobFlowsRequest.builder.jobFlowIds(jobFlowId).build
-              client.terminateJobFlows(terminateReq)
+              api.terminate(Seq(jobFlowId))
               liveClusters.remove(jobFlowId)
             }
-            Thread.sleep(5.seconds.toMillis)
+            sleep(5.seconds)
           }
 
           val nActive = activeSteps.values.map(_.length).sum
