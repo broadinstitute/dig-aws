@@ -182,6 +182,17 @@ object Emr extends LazyLogging {
         run.active = Map.empty
       }
 
+      def lostReason(status: ClusterStatus): String =
+        s"${status.state}/${Option(status.stateChangeReason).map(_.code).orNull}"
+
+      // submit up to the concurrency limit from the cluster's queue
+      def topUp(run: ClusterRun): Unit = {
+        val (toAdd, remaining) = run.queue.splitAt(maxActiveSteps - run.active.size)
+        val stepIds            = api.addSteps(run.id, toAdd.map(build => build()))
+        run.active = run.active ++ stepIds.zip(toAdd)
+        run.queue  = remaining
+      }
+
       val runResult = Try {
         while (live.nonEmpty) {
           live.toList.foreach { run =>
@@ -198,23 +209,33 @@ object Emr extends LazyLogging {
               if (bad.nonEmpty) {
                 val status = api.clusterStatus(run.id)
                 if (Emr.isLost(status)) {
-                  replace(run, s"${status.state}/${Option(status.stateChangeReason).map(_.code).orNull}")
+                  replace(run, lostReason(status))
                 } else {
                   throw new Exception(s"${run.id} failed: steps ${bad.mkString(", ")} ${states(bad.head)}; cluster ${status.state}")
                 }
               } else {
-                // keep only steps EMR still reports as in flight; an id EMR no longer
-                // reports is dropped here and caught by the completion check at the end
-                run.active = run.active.filter { case (id, _) => states.get(id).exists(s => s == StepState.PENDING || s == StepState.RUNNING) }
+                // keep only steps EMR still reports as in flight (PENDING, RUNNING, CANCEL_PENDING);
+                // dropped here: ids EMR no longer reports, and any state that is neither in
+                // flight, completed nor bad. The completion check at the end catches those.
+                val inFlight = Set(StepState.PENDING, StepState.RUNNING, StepState.CANCEL_PENDING)
+                run.active = run.active.filter { case (id, _) => states.get(id).exists(inFlight.contains) }
               }
             }
 
-            // top up to the step concurrency limit
+            // top up to the step concurrency limit; a cluster that died since the last
+            // poll rejects the submission, in which case it is replaced like any lost cluster
             if (run.active.size < maxActiveSteps && run.queue.nonEmpty) {
-              val (toAdd, remaining) = run.queue.splitAt(maxActiveSteps - run.active.size)
-              val stepIds            = api.addSteps(run.id, toAdd.map(build => build()))
-              run.active = run.active ++ stepIds.zip(toAdd)
-              run.queue  = remaining
+              Try(topUp(run)) match {
+                case Success(_) => ()
+                case Failure(ex) =>
+                  val status = api.clusterStatus(run.id)
+                  if (Emr.isLost(status)) {
+                    replace(run, lostReason(status))
+                    topUp(run)
+                  } else {
+                    throw ex
+                  }
+              }
             }
 
             // nothing left for this cluster

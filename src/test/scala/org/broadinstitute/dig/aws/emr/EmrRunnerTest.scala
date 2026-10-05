@@ -64,4 +64,38 @@ final class EmrRunnerTest extends FunSuite {
     assert(fake.clusters("j-2").request.name == "TestStage_replacement")
     assert(fake.completedStepNames.size == 3)
   }
+
+  test("cluster lost after its active steps completed is replaced and its queue runs on the replacement") {
+    val fake = new FakeEmr
+    fake.beforePoll = { n =>
+      if (n == 2) {
+        fake.stepsOf("j-1").foreach(_.state = StepState.COMPLETED)
+        fake.kill("j-1", ClusterStateChangeReasonCode.INSTANCE_FAILURE)
+      }
+    }
+
+    runner(fake).runJobs(clusterDef(), Map.empty, jobs(11), maxParallel = 1)
+
+    assert(fake.clusters.size == 2)
+    assert(fake.completedStepNames.size == 11)
+    assert(fake.stepsOf("j-2").size == 1)
+    assert(fake.clusters("j-2").terminated)
+  }
+
+  test("a poll that reports some steps COMPLETED and others CANCELLED requeues only the unfinished ones") {
+    val fake = new FakeEmr
+    fake.beforePoll = { n =>
+      if (n == 2) {
+        fake.steps("s-1").state = StepState.COMPLETED
+        fake.kill("j-1", ClusterStateChangeReasonCode.INSTANCE_FAILURE)
+      }
+    }
+
+    runner(fake).runJobs(clusterDef(), Map.empty, jobs(3), maxParallel = 1)
+
+    val doneName = fake.steps("s-1").config.name
+    assert(fake.completedStepNames.size == 3)
+    assert(fake.stepsOf("j-2").size == 2)
+    assert(fake.stepsOf("j-2").map(_.config.name).toSet == (0 until 3).map(i => s"step-$i").toSet - doneName)
+  }
 }
