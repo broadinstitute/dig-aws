@@ -7,8 +7,8 @@ final class AwsTest extends AwsFunSuite {
 
   private val config = AwsConfig.loadFromResource("config.json").get
 
-  override val s3: S3.Bucket   = new S3.Bucket(config.s3.bucket)
-  override val emr: Emr.Runner = new Emr.Runner(config.emr, config.s3.bucket)
+  override val s3: S3.Bucket   = new S3.Bucket(config.output.bucket, None)
+  override val emr: Emr.Runner = new Emr.Runner(config.emr, config.output.bucket)
 
   /**
     * Create a cluster and run a simple script job.
