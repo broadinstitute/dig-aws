@@ -4,7 +4,7 @@ import org.broadinstitute.dig.aws.Emr
 import org.broadinstitute.dig.aws.config.EmrConfig
 import org.broadinstitute.dig.aws.config.emr.SubnetId
 import org.scalatest.FunSuite
-import software.amazon.awssdk.services.emr.model.{ClusterStateChangeReasonCode, RunJobFlowRequest, StepState}
+import software.amazon.awssdk.services.emr.model.{ClusterState, ClusterStateChangeReason, ClusterStateChangeReasonCode, ClusterStatus, RunJobFlowRequest, StepState}
 
 import scala.concurrent.duration.FiniteDuration
 
@@ -168,5 +168,46 @@ final class EmrRunnerTest extends FunSuite {
 
     assert(ex.getMessage.contains("replacement budget"))
     assert(fake.clusters.size == 3, "exactly one replacement was launched before the budget ran out")
+  }
+
+  test("failed step on a healthy cluster is a genuine failure") {
+    val fake = new FakeEmr
+    // stepConcurrency 2 -> steps built with ActionOnFailure.CONTINUE, so the cluster stays up
+    fake.beforePoll = { n => if (n == 2) fake.failStep("s-1") }
+
+    val ex = intercept[Exception] {
+      runner(fake).runJobs(clusterDef(stepConcurrency = 2), Map.empty, jobs(4), maxParallel = 1)
+    }
+
+    assert(ex.getMessage.contains("failed"))
+    assert(fake.clusters.size == 1, "no replacement was launched")
+    assert(fake.clusters("j-1").terminated)
+  }
+
+  test("step failure that terminates its cluster (STEP_FAILURE) is a genuine failure") {
+    val fake = new FakeEmr
+    // stepConcurrency 1 -> TERMINATE_CLUSTER; failStep kills the cluster with STEP_FAILURE
+    fake.beforePoll = { n => if (n == 2) fake.failStep("s-1") }
+
+    intercept[Exception] {
+      runner(fake).runJobs(clusterDef(), Map.empty, jobs(4), maxParallel = 2)
+    }
+
+    assert(fake.clusters.size == 2, "no replacement was launched")
+    assert(fake.liveClusterIds.isEmpty, "the sibling cluster was terminated too")
+  }
+
+  test("isLost accepts only terminating states with a recoverable reason") {
+    def status(state: ClusterState, code: ClusterStateChangeReasonCode): ClusterStatus =
+      ClusterStatus.builder.state(state).stateChangeReason(ClusterStateChangeReason.builder.code(code).build).build
+
+    assert(Emr.isLost(status(ClusterState.TERMINATED_WITH_ERRORS, ClusterStateChangeReasonCode.INSTANCE_FAILURE)))
+    assert(Emr.isLost(status(ClusterState.TERMINATING, ClusterStateChangeReasonCode.INTERNAL_ERROR)))
+    assert(Emr.isLost(status(ClusterState.TERMINATED, ClusterStateChangeReasonCode.INSTANCE_FLEET_TIMEOUT)))
+    assert(!Emr.isLost(status(ClusterState.TERMINATED_WITH_ERRORS, ClusterStateChangeReasonCode.STEP_FAILURE)))
+    assert(!Emr.isLost(status(ClusterState.TERMINATED_WITH_ERRORS, ClusterStateChangeReasonCode.BOOTSTRAP_FAILURE)))
+    assert(!Emr.isLost(status(ClusterState.TERMINATED, ClusterStateChangeReasonCode.USER_REQUEST)))
+    assert(!Emr.isLost(status(ClusterState.RUNNING, ClusterStateChangeReasonCode.INSTANCE_FAILURE)))
+    assert(!Emr.isLost(ClusterStatus.builder.state(ClusterState.TERMINATED_WITH_ERRORS).build), "no reason at all")
   }
 }
