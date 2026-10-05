@@ -34,4 +34,34 @@ final class EmrRunnerTest extends FunSuite {
     assert(fake.completedStepNames.sorted == (0 until 7).map(i => s"step-$i").sorted)
     assert(fake.clusters.values.forall(_.terminated))
   }
+
+  test("a cluster lost to INSTANCE_FAILURE is replaced and its unfinished steps complete on the replacement") {
+    val fake = new FakeEmr
+    // Poll order: iteration 1 submits 3 steps to each cluster (no poll); iteration 2 polls
+    // j-1 (poll 1) and j-2 (poll 2), moving their steps to RUNNING. Killing j-2 before
+    // poll 3 (j-1's second poll) means j-1 completes normally and j-2's next poll (poll 4)
+    // reports all three of its steps CANCELLED.
+    fake.beforePoll = { n => if (n == 3) fake.kill("j-2", ClusterStateChangeReasonCode.INSTANCE_FAILURE) }
+
+    runner(fake).runJobs(clusterDef(), Map.empty, jobs(6), maxParallel = 2)
+
+    assert(fake.clusters.size == 3, "one replacement cluster was created")
+    assert(fake.clusters("j-3").request.name == "TestStage", "replacement built from the same ClusterDef")
+    assert(fake.completedStepNames.sorted == (0 until 6).map(i => s"step-$i").sorted, "every step completed")
+    assert(fake.completedStepNames.size == 6, "no step completed twice")
+    assert(fake.clusters("j-1").terminated && fake.clusters("j-3").terminated)
+    assert(fake.stepsOf("j-3").nonEmpty, "lost cluster's work ran on the replacement")
+  }
+
+  test("replacementDef is applied to the replacement cluster only") {
+    val fake = new FakeEmr
+    fake.beforePoll = { n => if (n == 2) fake.kill("j-1", ClusterStateChangeReasonCode.INTERNAL_ERROR) }
+
+    runner(fake).runJobs(clusterDef(), Map.empty, jobs(3), maxParallel = 1,
+      replacementDef = d => d.copy(name = "TestStage_replacement"))
+
+    assert(fake.clusters("j-1").request.name == "TestStage")
+    assert(fake.clusters("j-2").request.name == "TestStage_replacement")
+    assert(fake.completedStepNames.size == 3)
+  }
 }
