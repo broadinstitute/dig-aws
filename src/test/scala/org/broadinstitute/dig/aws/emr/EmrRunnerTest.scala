@@ -98,4 +98,58 @@ final class EmrRunnerTest extends FunSuite {
     assert(fake.stepsOf("j-2").size == 2)
     assert(fake.stepsOf("j-2").map(_.config.name).toSet == (0 until 3).map(i => s"step-$i").toSet - doneName)
   }
+
+  test("lost cluster with only pending steps is fully requeued") {
+    val fake = new FakeEmr
+    // poll 1 is j-1's first poll; its steps are all PENDING until then
+    fake.beforePoll = { n => if (n == 1) fake.kill("j-1", ClusterStateChangeReasonCode.INSTANCE_FAILURE) }
+
+    runner(fake).runJobs(clusterDef(), Map.empty, jobs(4), maxParallel = 1)
+
+    assert(fake.clusters.size == 2)
+    assert(fake.completedStepNames.sorted == (0 until 4).map(i => s"step-$i").sorted)
+    assert(fake.stepsOf("j-2").size == 4, "all four steps were resubmitted")
+  }
+
+  test("two clusters lost in one cycle both get replacements") {
+    val fake = new FakeEmr
+    fake.beforePoll = { n =>
+      if (n == 3) {
+        fake.kill("j-1", ClusterStateChangeReasonCode.INSTANCE_FAILURE)
+        fake.kill("j-2", ClusterStateChangeReasonCode.INTERNAL_ERROR)
+      }
+    }
+
+    runner(fake).runJobs(clusterDef(), Map.empty, jobs(8), maxParallel = 2)
+
+    assert(fake.clusters.size == 4)
+    assert(fake.completedStepNames.size == 8)
+    assert(fake.completedStepNames.toSet == (0 until 8).map(i => s"step-$i").toSet)
+  }
+
+  test("a replacement that is lost is replaced again until the budget runs out") {
+    val fake = new FakeEmr
+    fake.beforePoll = { n =>
+      if (n == 1) fake.kill("j-1", ClusterStateChangeReasonCode.INSTANCE_FAILURE)
+      if (n == 2) fake.kill("j-2", ClusterStateChangeReasonCode.INSTANCE_FAILURE)
+    }
+
+    runner(fake).runJobs(clusterDef(), Map.empty, jobs(3), maxParallel = 1, maxReplacements = 2)
+
+    assert(fake.clusters.size == 3)
+    assert(fake.completedStepNames.size == 3)
+  }
+
+  test("exceeding the replacement budget terminates everything and throws") {
+    val fake = new FakeEmr
+    fake.beforePoll = { n => if (n <= 2) fake.kill(s"j-$n", ClusterStateChangeReasonCode.INSTANCE_FAILURE) }
+
+    val ex = intercept[Exception] {
+      runner(fake).runJobs(clusterDef(), Map.empty, jobs(3), maxParallel = 1, maxReplacements = 1)
+    }
+
+    assert(ex.getMessage.contains("replacement budget"))
+    assert(fake.clusters.size == 2)
+    assert(fake.liveClusterIds.isEmpty, "no cluster left running")
+  }
 }
