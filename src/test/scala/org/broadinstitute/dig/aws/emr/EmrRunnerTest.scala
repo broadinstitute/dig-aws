@@ -127,7 +127,7 @@ final class EmrRunnerTest extends FunSuite {
     assert(fake.completedStepNames.toSet == (0 until 8).map(i => s"step-$i").toSet)
   }
 
-  test("a replacement that is lost is replaced again until the budget runs out") {
+  test("a replacement that is lost is replaced again within the budget") {
     val fake = new FakeEmr
     fake.beforePoll = { n =>
       if (n == 1) fake.kill("j-1", ClusterStateChangeReasonCode.INSTANCE_FAILURE)
@@ -170,6 +170,19 @@ final class EmrRunnerTest extends FunSuite {
     assert(fake.clusters.size == 3, "exactly one replacement was launched before the budget ran out")
   }
 
+  test("a requeued serial job keeps its step order on the replacement") {
+    val fake = new FakeEmr
+    // one job of 6 serial steps; all 6 are submitted at once (maxActiveSteps = 10),
+    // the cluster is lost at its first poll, and the replacement must receive them in the same order
+    val serial = new Job((0 until 6).map(i => Job.CommandRunner(s"serial-$i", Seq("bash", "-c", s"echo $i"))))
+    fake.beforePoll = { n => if (n == 1) fake.kill("j-1", ClusterStateChangeReasonCode.INSTANCE_FAILURE) }
+
+    runner(fake).runJobs(clusterDef(), Map.empty, Seq(serial), maxParallel = 1)
+
+    assert(fake.stepsOf("j-2").map(_.config.name) == (0 until 6).map(i => s"serial-$i"))
+    assert(fake.completedStepNames.size == 6)
+  }
+
   test("failed step on a healthy cluster is a genuine failure") {
     val fake = new FakeEmr
     // stepConcurrency 2 -> steps built with ActionOnFailure.CONTINUE, so the cluster stays up
@@ -180,6 +193,7 @@ final class EmrRunnerTest extends FunSuite {
     }
 
     assert(ex.getMessage.contains("failed"))
+    assert(ex.getMessage.contains("RUNNING"))
     assert(fake.clusters.size == 1, "no replacement was launched")
     assert(fake.clusters("j-1").terminated)
   }
@@ -189,10 +203,11 @@ final class EmrRunnerTest extends FunSuite {
     // stepConcurrency 1 -> TERMINATE_CLUSTER; failStep kills the cluster with STEP_FAILURE
     fake.beforePoll = { n => if (n == 2) fake.failStep("s-1") }
 
-    intercept[Exception] {
+    val ex = intercept[Exception] {
       runner(fake).runJobs(clusterDef(), Map.empty, jobs(4), maxParallel = 2)
     }
 
+    assert(ex.getMessage.contains("STEP_FAILURE"))
     assert(fake.clusters.size == 2, "no replacement was launched")
     assert(fake.liveClusterIds.isEmpty, "the sibling cluster was terminated too")
   }

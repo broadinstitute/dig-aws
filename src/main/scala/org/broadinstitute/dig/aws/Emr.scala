@@ -11,6 +11,7 @@ import scala.util.{Failure, Random, Success, Try}
 import software.amazon.awssdk.services.emr.EmrClient
 import software.amazon.awssdk.services.emr.model.{ClusterState, ClusterStateChangeReasonCode, ClusterStatus, JobFlowInstancesConfig, RunJobFlowRequest, StepConfig, StepState}
 
+import scala.collection.immutable.VectorMap
 import scala.collection.mutable
 
 /** AWS client for creating EMR clusters and running jobs.
@@ -36,10 +37,13 @@ object Emr extends LazyLogging {
       case ClusterState.TERMINATING | ClusterState.TERMINATED | ClusterState.TERMINATED_WITH_ERRORS => true
       case _                                                                                       => false
     }
-    val reason = Option(status.stateChangeReason).map(_.code)
 
-    goingAway && reason.exists(recoverableReasons.contains)
+    goingAway && reasonCode(status).exists(recoverableReasons.contains)
   }
+
+  /** The reason code EMR gave for the cluster's last state change, if any. */
+  private def reasonCode(status: ClusterStatus): Option[ClusterStateChangeReasonCode] =
+    Option(status.stateChangeReason).map(_.code)
 
   /** Runners launch and add steps to job clusters. */
   class Runner(config: EmrConfig, logBucket: String, api: EmrApi, sleep: FiniteDuration => Unit) {
@@ -123,7 +127,7 @@ object Emr extends LazyLogging {
     private final class ClusterRun(
       var id: String,
       var queue: List[() => StepConfig],
-      var active: Map[String, () => StepConfig],
+      var active: VectorMap[String, () => StepConfig],
     )
 
     /** Runs jobs across multiple clusters, terminating clusters when their work is complete.
@@ -132,6 +136,9 @@ object Emr extends LazyLogging {
       * by a new cluster built from `replacementDef(clusterDef)` and its unfinished
       * steps are resubmitted there, up to `maxReplacements` times per call. A step
       * failure, or any other cluster failure, terminates every cluster and throws.
+      *
+      * `replacementDef` must not change `stepConcurrency` or `bootstrapSteps`: the
+      * steps' action-on-failure was decided from the original definition.
       */
     def runJobs(
       clusterDef: ClusterDef,
@@ -159,7 +166,7 @@ object Emr extends LazyLogging {
         sleep(1.second) // delay to avoid rate limiting
         val id    = createCluster(clusterDef, env)
         val steps = shuffledJobs.zipWithIndex.collect { case (job, idx) if idx % nClusters == i => job }
-        new ClusterRun(id, steps.flatMap(_.steps).map(step => () => step.build(terminateOnFailure)).toList, Map.empty)
+        new ClusterRun(id, steps.flatMap(_.steps).map(step => () => step.build(terminateOnFailure)).toList, VectorMap.empty)
       }
       logger.info("Clusters launched.")
 
@@ -179,16 +186,21 @@ object Emr extends LazyLogging {
 
         run.id     = createCluster(replacementDef(clusterDef), env)
         run.queue  = unfinished
-        run.active = Map.empty
+        run.active = VectorMap.empty
       }
 
       def lostReason(status: ClusterStatus): String =
-        s"${status.state}/${Option(status.stateChangeReason).map(_.code).orNull}"
+        s"${status.state}/${reasonCode(status).orNull}"
+
+      def reasonMessage(status: ClusterStatus): String =
+        Option(status.stateChangeReason).flatMap(r => Option(r.message)).map(m => s": $m").getOrElse("")
 
       // submit up to the concurrency limit from the cluster's queue
       def topUp(run: ClusterRun): Unit = {
         val (toAdd, remaining) = run.queue.splitAt(maxActiveSteps - run.active.size)
-        val stepIds            = api.addSteps(run.id, toAdd.map(build => build()))
+        val configs            = toAdd.map(build => build())
+        val stepIds            = api.addSteps(run.id, configs)
+        logger.info(s"Submitted ${configs.size} steps to ${run.id}: ${configs.map(_.name).mkString(", ")}")
         run.active = run.active ++ stepIds.zip(toAdd)
         run.queue  = remaining
       }
@@ -211,14 +223,14 @@ object Emr extends LazyLogging {
                 if (Emr.isLost(status)) {
                   replace(run, lostReason(status))
                 } else {
-                  throw new Exception(s"${run.id} failed: steps ${bad.mkString(", ")} ${states(bad.head)}; cluster ${status.state}")
+                  throw new Exception(s"${run.id} failed: steps ${bad.mkString(", ")} ${states(bad.head)}; cluster ${lostReason(status)}${reasonMessage(status)}")
                 }
               } else {
                 // keep only steps EMR still reports as in flight (PENDING, RUNNING, CANCEL_PENDING);
                 // dropped here: ids EMR no longer reports, and any state that is neither in
                 // flight, completed nor bad. The completion check at the end catches those.
                 val inFlight = Set(StepState.PENDING, StepState.RUNNING, StepState.CANCEL_PENDING)
-                run.active = run.active.filter { case (id, _) => states.get(id).exists(inFlight.contains) }
+                run.active = VectorMap.from(run.active.filter { case (id, _) => states.get(id).exists(inFlight.contains) })
               }
             }
 
@@ -233,7 +245,7 @@ object Emr extends LazyLogging {
                     replace(run, lostReason(status))
                     topUp(run)
                   } else {
-                    throw ex
+                    throw new Exception(s"${run.id} rejected new steps; cluster ${lostReason(status)}${reasonMessage(status)}", ex)
                   }
               }
             }
@@ -247,14 +259,13 @@ object Emr extends LazyLogging {
             sleep(5.seconds)
           }
 
-          val inFlight = live.map(r => r.active.size + r.queue.size).sum
-          val completed = totalSteps - inFlight
-          if (completed > lastReported) {
-            logger.info(s"Global job progress: $completed/$totalSteps steps (${completed * 100 / totalSteps}%)")
-            lastReported = completed
+          if (completedSteps > lastReported) {
+            logger.info(s"Global job progress: $completedSteps/$totalSteps steps (${completedSteps * 100 / totalSteps}%)")
+            lastReported = completedSteps
           }
         }
 
+        logger.info(s"Replacements used: $replacementsUsed/$maxReplacements")
         if (completedSteps != totalSteps) {
           throw new Exception(s"Only $completedSteps of $totalSteps steps were reported COMPLETED")
         }

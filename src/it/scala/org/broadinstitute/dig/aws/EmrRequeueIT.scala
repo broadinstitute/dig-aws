@@ -13,8 +13,9 @@ import scala.jdk.CollectionConverters._
 /** Launches two single-node clusters running `sleep` steps, waits for the
   * second one to reach RUNNING (plus a minute of step progress), then terminates
   * its master EC2 instance and checks that the runner replaces it and finishes.
-  * Prints the ClusterStatus EMR reports for the killed cluster so
-  * `Emr.recoverableReasons` can be checked against the printed reason.
+  * Prints the ClusterStatus EMR reports for each observed cluster (even if
+  * `runJobs` throws) so `Emr.recoverableReasons` can be checked against the
+  * printed reason.
   *
   * Run by hand: sbt "it:testOnly org.broadinstitute.dig.aws.EmrRequeueIT"
   */
@@ -76,10 +77,12 @@ final class EmrRequeueIT extends FunSuite {
     killer.setDaemon(true)
     killer.start()
 
-    runner.runJobs(cluster, Map.empty, jobs, maxParallel = 2)
-
-    api.observed.foreach { case (id, status) =>
-      println(s"[IT] $id -> ${status.state} / ${Option(status.stateChangeReason).map(r => s"${r.code}: ${r.message}").orNull}")
+    try {
+      runner.runJobs(cluster, Map.empty, jobs, maxParallel = 2)
+    } finally {
+      api.observed.foreach { case (id, status) =>
+        println(s"[IT] $id -> ${status.state} / ${Option(status.stateChangeReason).map(r => s"${r.code}: ${r.message}").orNull}")
+      }
     }
     assert(api.created.size == 3, s"expected one replacement cluster, created: ${api.created}")
     assert(api.observed.get(api.created(1)).exists(Emr.isLost), "killed cluster was recognised as lost")
