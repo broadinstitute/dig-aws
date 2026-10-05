@@ -254,6 +254,10 @@ object Emr extends LazyLogging {
             lastReported = completed
           }
         }
+
+        if (completedSteps != totalSteps) {
+          throw new Exception(s"Only $completedSteps of $totalSteps steps were reported COMPLETED")
+        }
       }
 
       // Ensure all clusters are properly terminated, especially on exceptions

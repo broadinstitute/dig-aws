@@ -210,4 +210,19 @@ final class EmrRunnerTest extends FunSuite {
     assert(!Emr.isLost(status(ClusterState.RUNNING, ClusterStateChangeReasonCode.INSTANCE_FAILURE)))
     assert(!Emr.isLost(ClusterStatus.builder.state(ClusterState.TERMINATED_WITH_ERRORS).build), "no reason at all")
   }
+
+  test("runJobs throws if EMR stops reporting a submitted step") {
+    // a fake whose ListSteps silently omits step s-2
+    val fake = new FakeEmr {
+      override def stepStates(clusterId: String, stepIds: Seq[String]): Map[String, StepState] =
+        super.stepStates(clusterId, stepIds) - "s-2"
+    }
+
+    val ex = intercept[Exception] {
+      runner(fake).runJobs(clusterDef(), Map.empty, jobs(3), maxParallel = 1)
+    }
+
+    assert(ex.getMessage.contains("2 of 3"), s"message was: ${ex.getMessage}")
+    assert(fake.liveClusterIds.isEmpty)
+  }
 }
