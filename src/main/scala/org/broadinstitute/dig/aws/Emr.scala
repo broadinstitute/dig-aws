@@ -2,16 +2,16 @@ package org.broadinstitute.dig.aws
 
 import com.typesafe.scalalogging.LazyLogging
 import org.broadinstitute.dig.aws.config.EmrConfig
-import org.broadinstitute.dig.aws.emr.{ClusterDef, Job}
+import org.broadinstitute.dig.aws.emr.{ClusterDef, EmrApi, Job}
 import org.broadinstitute.dig.aws.emr.configurations.Configuration
 
 import scala.concurrent.duration._
 import scala.jdk.CollectionConverters._
 import scala.util.{Failure, Random, Success, Try}
-import software.amazon.awssdk.awscore.exception.AwsServiceException
 import software.amazon.awssdk.services.emr.EmrClient
-import software.amazon.awssdk.services.emr.model.{AddJobFlowStepsRequest, DescribeClusterRequest, JobFlowInstancesConfig, ListStepsRequest, RunJobFlowRequest, RunJobFlowResponse, StepState, TerminateJobFlowsRequest}
+import software.amazon.awssdk.services.emr.model.{ClusterState, ClusterStateChangeReasonCode, ClusterStatus, JobFlowInstancesConfig, RunJobFlowRequest, StepConfig, StepState}
 
+import scala.collection.immutable.VectorMap
 import scala.collection.mutable
 
 /** AWS client for creating EMR clusters and running jobs.
@@ -21,11 +21,44 @@ object Emr extends LazyLogging {
   /** AWS SDK client. All runners can share a single client. */
   lazy val client: EmrClient = EmrClient.builder.build
 
+  /** Cluster state change reasons that mean the cluster was lost through no
+    * fault of its steps (Spot reclaim, hardware failure, EMR internal error).
+    * Any other reason is treated as a genuine failure of the work.
+    */
+  val recoverableReasons: Set[ClusterStateChangeReasonCode] = Set(
+    ClusterStateChangeReasonCode.INSTANCE_FAILURE,
+    ClusterStateChangeReasonCode.INTERNAL_ERROR,
+    ClusterStateChangeReasonCode.INSTANCE_FLEET_TIMEOUT,
+  )
+
+  /** True if the cluster is going away for a recoverable reason. */
+  def isLost(status: ClusterStatus): Boolean = {
+    val goingAway = status.state match {
+      case ClusterState.TERMINATING | ClusterState.TERMINATED | ClusterState.TERMINATED_WITH_ERRORS => true
+      case _                                                                                       => false
+    }
+
+    goingAway && reasonCode(status).exists(recoverableReasons.contains)
+  }
+
+  /** The reason code EMR gave for the cluster's last state change, if any. */
+  private def reasonCode(status: ClusterStatus): Option[ClusterStateChangeReasonCode] =
+    Option(status.stateChangeReason).map(_.code)
+
   /** Runners launch and add steps to job clusters. */
-  final class Runner(config: EmrConfig, logBucket: String) {
+  class Runner(config: EmrConfig, logBucket: String, api: EmrApi, sleep: FiniteDuration => Unit) {
+
+    /** Production constructor: live EMR API and real sleeping. */
+    def this(config: EmrConfig, logBucket: String) = {
+      this(config, logBucket, EmrApi.live, (d: FiniteDuration) => Thread.sleep(d.toMillis))
+    }
+
     private val subnetIterator = Iterator.continually(config.subnetIds).flatten
 
-    private def createCluster(clusterDef: ClusterDef, env: Map[String, String]): RunJobFlowResponse = {
+    /** Build the request that creates a cluster for `clusterDef`. Protected so
+      * tests can override it (ClusterDef.instanceGroups looks up EC2 instance types).
+      */
+    protected def createClusterRequest(clusterDef: ClusterDef, env: Map[String, String]): RunJobFlowRequest = {
       val bootstrapConfigs = clusterDef.bootstrapScripts.map(_.config)
       val logUri           = s"s3://$logBucket/logs/${clusterDef.name}"
       var configurations   = clusterDef.applicationConfigurations
@@ -77,42 +110,44 @@ object Emr extends LazyLogging {
       }
 
       val request = requestBuilder.build
-      client.runJobFlow(request)
+      request
     }
 
-    private def clusterStatus(cluster: RunJobFlowResponse, stepIds: Seq[String]): List[String] = {
-      // AWS ListSteps API has a limit of 10 step IDs per request, so batch the requests
-      stepIds.grouped(10).flatMap { batchStepIds =>
-        val req = ListStepsRequest.builder
-          .clusterId(cluster.jobFlowId)
-          .stepIds(batchStepIds.asJava)
-          .build
-
-        client.listStepsPaginator(req).steps.asScala.toArray.collect { step =>
-          step.status.state match {
-            case StepState.PENDING | StepState.RUNNING => step.id
-            case StepState.FAILED                      => throw new Exception(s"${cluster.jobFlowId} failed")
-            case StepState.CANCELLED                   => throw new Exception(s"${cluster.jobFlowId} cancelled")
-            case _                                     => ""  // ignore other states
-          }
-        }.filter(_.nonEmpty)
-      }.toList
+    private def createCluster(clusterDef: ClusterDef, env: Map[String, String]): String = {
+      api.runJobFlow(createClusterRequest(clusterDef, env))
     }
 
     /** Terminate a list of running clusters. */
-    private def terminateClusters(clusters: Seq[RunJobFlowResponse]): Unit = {
-      clusters.map(_.jobFlowId).sliding(10, 10).foreach { flowIds =>
-        val req = TerminateJobFlowsRequest.builder.jobFlowIds(flowIds.asJava).build
-        client.terminateJobFlows(req)
-      }
-
+    private def terminateClusters(clusterIds: Seq[String]): Unit = {
+      api.terminate(clusterIds)
       logger.info("Clusters terminated.")
     }
 
+    /** A cluster's share of the work: steps not yet submitted and steps in flight. */
+    private final class ClusterRun(
+      var id: String,
+      var queue: List[() => StepConfig],
+      var active: VectorMap[String, () => StepConfig],
+    )
+
     /** Runs jobs across multiple clusters, terminating clusters when their work is complete.
-     * Also ensures all clusters are terminated if an exception occurs during execution.
-     */
-    def runJobs(clusterDef: ClusterDef, env: Map[String, String], jobs: Seq[Job], maxParallel: Int = 5): Unit = {
+      *
+      * A cluster that dies for a recoverable reason (see `Emr.isLost`) is replaced
+      * by a new cluster built from `replacementDef(clusterDef)` and its unfinished
+      * steps are resubmitted there, up to `maxReplacements` times per call. A step
+      * failure, or any other cluster failure, terminates every cluster and throws.
+      *
+      * `replacementDef` must not change `stepConcurrency` or `bootstrapSteps`: the
+      * steps' action-on-failure was decided from the original definition.
+      */
+    def runJobs(
+      clusterDef: ClusterDef,
+      env: Map[String, String],
+      jobs: Seq[Job],
+      maxParallel: Int = 5,
+      maxReplacements: Int = 5,
+      replacementDef: ClusterDef => ClusterDef = identity,
+    ): Unit = {
       val allJobs = jobs.flatMap {
         case job if job.parallelSteps => job.steps.map(new Job(_))
         case job                      => Seq(job)
@@ -124,102 +159,123 @@ object Emr extends LazyLogging {
 
       logger.info(s"Creating $nClusters clusters for ${jobs.size} jobs...")
 
-      val clusters: Vector[RunJobFlowResponse] = (1 to nClusters).toVector.map { _ =>
-        Thread.sleep(1.second.toMillis) // delay to avoid rate limiting
-        createCluster(clusterDef, env)
+      // Shuffle jobs once, then deal them round-robin across clusters. The build
+      // is deferred so a step can be rebuilt if it has to move to a replacement.
+      val shuffledJobs = Random.shuffle(allJobs)
+      val runs: Vector[ClusterRun] = (0 until nClusters).toVector.map { i =>
+        sleep(1.second) // delay to avoid rate limiting
+        val id    = createCluster(clusterDef, env)
+        val steps = shuffledJobs.zipWithIndex.collect { case (job, idx) if idx % nClusters == i => job }
+        new ClusterRun(id, steps.flatMap(_.steps).map(step => () => step.build(terminateOnFailure)).toList, VectorMap.empty)
       }
       logger.info("Clusters launched.")
-      
-      // Wrap execution in a Try block to ensure all clusters are terminated if an exception occurs
+
+      val live             = mutable.ListBuffer(runs: _*)
+      var completedSteps   = 0
+      var replacementsUsed = 0
+      var lastReported     = -1
+
+      def replace(run: ClusterRun, reason: String): Unit = {
+        if (replacementsUsed >= maxReplacements) {
+          throw new Exception(s"Cluster ${run.id} lost ($reason) and the replacement budget of $maxReplacements is spent")
+        }
+        replacementsUsed += 1
+
+        val unfinished = run.active.values.toList ++ run.queue
+        logger.warn(s"Cluster ${run.id} lost ($reason); launching replacement ${replacementsUsed}/$maxReplacements for ${unfinished.size} steps")
+
+        run.id     = createCluster(replacementDef(clusterDef), env)
+        run.queue  = unfinished
+        run.active = VectorMap.empty
+      }
+
+      def lostReason(status: ClusterStatus): String =
+        s"${status.state}/${reasonCode(status).orNull}"
+
+      def reasonMessage(status: ClusterStatus): String =
+        Option(status.stateChangeReason).flatMap(r => Option(r.message)).map(m => s": $m").getOrElse("")
+
+      // submit up to the concurrency limit from the cluster's queue
+      def topUp(run: ClusterRun): Unit = {
+        val (toAdd, remaining) = run.queue.splitAt(maxActiveSteps - run.active.size)
+        val configs            = toAdd.map(build => build())
+        val stepIds            = api.addSteps(run.id, configs)
+        logger.info(s"Submitted ${configs.size} steps to ${run.id}: ${configs.map(_.name).mkString(", ")}")
+        run.active = run.active ++ stepIds.zip(toAdd)
+        run.queue  = remaining
+      }
+
       val runResult = Try {
-        // Shuffle jobs once before distributing to clusters
-        val shuffledJobs = Random.shuffle(allJobs)
-        
-        // For each cluster, maintain a mutable queue of steps remaining and the currently active step ids.
-        val stepQueues    = mutable.Map.empty[String, List[() => software.amazon.awssdk.services.emr.model.StepConfig]]
-        val activeSteps   = mutable.Map.empty[String, List[String]]
-        clusters.foreach { cluster =>
-          // Distribute the shuffled steps across clusters.
-          // Here we take the overall shuffled list and assign them round-robin.
-          val stepsForThisCluster =
-            shuffledJobs.zipWithIndex.collect { case (job, idx) if idx % nClusters == clusters.indexOf(cluster) => job }
-          // We extract the underlying step builders (by deferring the build so we can set the termination flag later).
-          val stepBuilders = stepsForThisCluster.flatMap(_.steps).map { step =>
-            // We wrap the build in a function so we can pass the flag at the right moment.
-            () => step.build(terminateOnFailure)
-          }.toList
-          stepQueues(cluster.jobFlowId) = stepBuilders
-          activeSteps(cluster.jobFlowId) = List.empty
+        while (live.nonEmpty) {
+          live.toList.foreach { run =>
+            // poll the steps in flight
+            if (run.active.nonEmpty) {
+              val states    = api.stepStates(run.id, run.active.keys.toSeq)
+              val completed = states.collect { case (id, StepState.COMPLETED) => id }.toSet
+              val bad       = states.collect { case (id, StepState.FAILED | StepState.CANCELLED | StepState.INTERRUPTED) => id }
+
+              // steps that finished in this poll are done whatever happens to the cluster next
+              completedSteps += completed.size
+              run.active = run.active -- completed
+
+              if (bad.nonEmpty) {
+                val status = api.clusterStatus(run.id)
+                if (Emr.isLost(status)) {
+                  replace(run, lostReason(status))
+                } else {
+                  throw new Exception(s"${run.id} failed: steps ${bad.mkString(", ")} ${states(bad.head)}; cluster ${lostReason(status)}${reasonMessage(status)}")
+                }
+              } else {
+                // keep only steps EMR still reports as in flight (PENDING, RUNNING, CANCEL_PENDING);
+                // dropped here: ids EMR no longer reports, and any state that is neither in
+                // flight, completed nor bad. The completion check at the end catches those.
+                val inFlight = Set(StepState.PENDING, StepState.RUNNING, StepState.CANCEL_PENDING)
+                run.active = VectorMap.from(run.active.filter { case (id, _) => states.get(id).exists(inFlight.contains) })
+              }
+            }
+
+            // top up to the step concurrency limit; a cluster that died since the last
+            // poll rejects the submission, in which case it is replaced like any lost cluster
+            if (run.active.size < maxActiveSteps && run.queue.nonEmpty) {
+              Try(topUp(run)) match {
+                case Success(_) => ()
+                case Failure(ex) =>
+                  val status = api.clusterStatus(run.id)
+                  if (Emr.isLost(status)) {
+                    replace(run, lostReason(status))
+                    topUp(run)
+                  } else {
+                    throw new Exception(s"${run.id} rejected new steps; cluster ${lostReason(status)}${reasonMessage(status)}", ex)
+                  }
+              }
+            }
+
+            // nothing left for this cluster
+            if (run.queue.isEmpty && run.active.isEmpty) {
+              logger.info(s"Terminating cluster ${run.id} because all assigned work has been distributed and completed.")
+              api.terminate(Seq(run.id))
+              live -= run
+            }
+            sleep(5.seconds)
+          }
+
+          if (completedSteps > lastReported) {
+            logger.info(s"Global job progress: $completedSteps/$totalSteps steps (${completedSteps * 100 / totalSteps}%)")
+            lastReported = completedSteps
+          }
         }
 
-        // A mutable set of "live" clusters (identified by jobFlowId) that haven't yet been terminated.
-        val liveClusters = mutable.Set(clusters.map(_.jobFlowId): _*)
-
-        // For progress reporting (global across clusters)
-        var lastCompletedSteps = -1
-
-        // Main loop: as long as there is any cluster still alive, poll them.
-        while (liveClusters.nonEmpty) {
-          liveClusters.foreach { jobFlowId =>
-            // if there are steps queued or active for the cluster,
-            // look them up and process on a per-cluster basis.
-            val queue   = stepQueues.getOrElse(jobFlowId, Nil)
-            var actives = activeSteps.getOrElse(jobFlowId, Nil)
-
-            // Only poll status if there are active steps.
-            if (actives.nonEmpty) {
-              val cluster = clusters.find(_.jobFlowId == jobFlowId).get
-              try {
-                actives = clusterStatus(cluster, actives)
-                activeSteps(jobFlowId) = actives
-              } catch {
-                case ex: AwsServiceException if ex.isThrottlingException =>
-                  logger.warn("AWS rate limit exceeded, throttling...")
-                  Thread.sleep(2.minutes.toMillis)
-              }
-            }
-
-            // If there is capacity for more steps (up to configured stepConcurrency)
-            if (actives.length < maxActiveSteps && queue.nonEmpty) {
-              val remainingCapacity = maxActiveSteps - actives.length
-              val (toAdd, remainingQueue) = queue.splitAt(remainingCapacity)
-              val stepConfigs = toAdd.map(buildFn => buildFn())
-              val cluster = clusters.find(_.jobFlowId == jobFlowId).get
-              val req = AddJobFlowStepsRequest.builder
-                .jobFlowId(cluster.jobFlowId)
-                .steps(stepConfigs.asJava)
-                .build
-              val response = client.addJobFlowSteps(req)
-              if (response.hasStepIds) {
-                activeSteps(jobFlowId) = activeSteps(jobFlowId) ++ response.stepIds.asScala
-              }
-              stepQueues(jobFlowId) = remainingQueue
-            }
-
-            if (stepQueues.getOrElse(jobFlowId, Nil).isEmpty && activeSteps.getOrElse(jobFlowId, Nil).isEmpty) {
-              logger.info(s"Terminating cluster $jobFlowId because all assigned work has been distributed and completed.")
-              val terminateReq = TerminateJobFlowsRequest.builder.jobFlowIds(jobFlowId).build
-              client.terminateJobFlows(terminateReq)
-              liveClusters.remove(jobFlowId)
-            }
-            Thread.sleep(5.seconds.toMillis)
-          }
-
-          val nActive = activeSteps.values.map(_.length).sum
-          val nQueued = stepQueues.values.map(_.length).sum
-          val completed = totalSteps - (nActive + nQueued)
-          if (completed > lastCompletedSteps) {
-            logger.info(s"Global job progress: $completed/$totalSteps steps (${completed * 100 / totalSteps}%)")
-            lastCompletedSteps = completed
-          }
+        logger.info(s"Replacements used: $replacementsUsed/$maxReplacements")
+        if (completedSteps != totalSteps) {
+          throw new Exception(s"Only $completedSteps of $totalSteps steps were reported COMPLETED")
         }
       }
-      
+
       // Ensure all clusters are properly terminated, especially on exceptions
       runResult match {
         case Failure(ex) =>
           logger.error(s"An exception occurred during job execution: ${ex.getMessage}. Terminating all remaining clusters.")
-          terminateClusters(clusters)
+          terminateClusters(live.map(_.id).toList)
           throw ex
         case Success(_) =>
           logger.info("All clusters have terminated their work.")
