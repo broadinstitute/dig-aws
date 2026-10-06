@@ -1,11 +1,10 @@
 package org.broadinstitute.dig.aws
 
-import org.broadinstitute.dig.aws.config.AwsConfig
 
 final class AwsTest extends AwsFunSuite {
   import Implicits._
 
-  private val config = AwsConfig.loadFromResource("config.json").get
+  private val config = ItConfig.load()
 
   override val s3: S3.Bucket   = new S3.Bucket(config.output.bucket, None)
   override val emr: Emr.Runner = new Emr.Runner(config.emr, config.output.bucket)

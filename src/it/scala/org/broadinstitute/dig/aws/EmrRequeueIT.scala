@@ -1,6 +1,5 @@
 package org.broadinstitute.dig.aws
 
-import org.broadinstitute.dig.aws.config.AwsConfig
 import org.broadinstitute.dig.aws.emr.{ClusterDef, EmrApi, Job}
 import org.scalatest.FunSuite
 import software.amazon.awssdk.services.ec2.Ec2Client
@@ -21,7 +20,7 @@ import scala.jdk.CollectionConverters._
   */
 final class EmrRequeueIT extends FunSuite {
 
-  private val config = AwsConfig.loadFromResource("config.json").get
+  private val config = ItConfig.load()
 
   /** Live EMR API that records cluster ids and the status of any cluster the runner describes. */
   private final class RecordingApi(live: EmrApi) extends EmrApi {
